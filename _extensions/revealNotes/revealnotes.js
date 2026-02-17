@@ -29,8 +29,8 @@
  
 *******************************************************************/
 
-window.RevealNotes = window.RevealNotes || {
-    id: 'RevealRevealNotes',
+window.revealNotes = window.revealNotes || {
+    id: 'revealNotes',
     init: function (deck) {
         initNotes(deck);
     }
