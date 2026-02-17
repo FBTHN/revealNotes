@@ -1,0 +1,4 @@
+# plugin.yml — tells Quarto how to load the JS plugin
+
+name: revealNotes
+script: revealNotes.js

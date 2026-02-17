@@ -1,0 +1,1240 @@
+/*****************************************************************
+ ** Author: Felix Boy, felixboy.mail@gmail.com
+ **
+ ** A plugin for reveal.js adding a handwriting canvas.
+ **
+ ** Version: 1.0.0
+ **
+ ** License: MIT license 
+ **
+ ** Copyright (c) 2026 Felix Boy
+ **
+ ** Permission is hereby granted, free of charge, to any person obtaining a copy
+ ** of this software and associated documentation files (the "Software"), to deal
+ ** in the Software without restriction, including without limitation the rights
+ ** to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ ** copies of the Software, and to permit persons to whom the Software is
+ ** furnished to do so, subject to the following conditions:
+ 
+ ** The above copyright notice and this permission notice shall be included in all
+ ** copies or substantial portions of the Software.
+ 
+ ** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ ** IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ ** FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ ** AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ ** LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ ** SOFTWARE.
+ 
+*******************************************************************/
+
+window.revealNotes = window.revealNotes || {
+    id: 'revealNotes',
+    init: function (deck) {
+        initNotes(deck);
+    }
+};
+
+const initNotes = function (Reveal) {
+    let svg;
+    let isDrawing = false;
+    let isErasing = false;
+    let isLassoing = false;
+    let isMovingSelection = false;
+    let isDraggingSelection = false;
+    let wasPenButtonDown = false;
+    let penStyleLock = false;
+    let penSession = false;
+
+    let currentPathElement = null;
+    let currentPoints = [];
+    let currentSlideGroup = null;
+    let lassoPoints = [];
+    let selectedElements = [];
+    let selectionTransform = { x: 0, y: 0 };
+
+    let dragStartPos = { x: 0, y: 0 };
+
+    let currentTool = 'pen';
+    let currentColor = "#325B8B";
+
+    let strokeWidths = {
+        'pen': 3,
+        'marker': 10
+    };
+
+    let toolTipElement;
+    let tooltipTimeout;
+
+    const PEN_ICON_SVG = `<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
+    const MARKER_ICON_SVG = `<svg fill="#000000" viewBox="0 0 512 512"><g><g><polygon points="57.832,391.052 0,448.885 85.151,504.67 128.3,461.521"/></g></g><g><g><path d="M497.972,113.851l-92.47-92.47c-9.06-9.061-21.107-14.051-33.921-14.051c-12.813,0-24.861,4.99-33.922,14.051
+                            L141.153,217.886l160.314,160.313l196.507-196.505C516.676,162.989,516.676,132.554,497.972,113.851z"/></g></g><g><g><path d="M119.691,239.347L61.56,297.479l21.069,21.069l-25.993,25.993c-0.401,0.401-0.787,0.811-1.163,1.228l118.112,118.112
+                            c0.418-0.376,0.828-0.764,1.228-1.163l25.993-25.992l21.068,21.068l58.132-58.132L119.691,239.347z"/></g></g></svg>`;
+    const ERASER_ICON_SVG = `<svg fill="#000000" viewBox="0 0 512 512"><g><g><path d="M495.276,133.96L377.032,15.715c-19.605-19.608-51.34-19.609-70.946,0L40.37,281.428
+                            c-19.557,19.56-19.557,51.386,0.001,70.946l61.153,61.153c9.475,9.476,22.074,14.693,35.473,14.693h114.188
+                            c13.4,0,25.998-5.219,35.473-14.693l25.678-25.678v-0.001l182.941-182.942C514.837,185.347,514.837,153.52,495.276,133.96z
+                            M263.009,389.878c-3.158,3.158-7.358,4.897-11.824,4.897H136.997c-4.467,0-8.666-1.739-11.824-4.897l-61.152-61.152
+                            c-6.521-6.521-6.521-17.129-0.001-23.65l70.948-70.948l141.895,141.895L263.009,389.878z M471.629,181.258l-32.113,32.113
+                            L297.622,71.475l32.113-32.113c6.522-6.521,17.129-6.519,23.65,0l118.244,118.245 C478.148,164.128,478.148,174.737,471.629,181.258z"/></g></g><g><g><path d="M495.278,477.546H16.722C7.487,477.546,0,485.034,0,494.269s7.487,16.722,16.722,16.722h478.555
+                            c9.235,0,16.722-7.487,16.722-16.722S504.513,477.546,495.278,477.546z"/></g></g></svg>`;
+    const LASSO_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.00001 10C5.00001 8.75523 5.7133 7.52938 7.06628 6.57433C8.41665 5.62113 10.3346 5 12.5 5C14.6654 5 16.5834 5.62113 17.9337 6.57433C19.2867 7.52938 20 8.75523 20 10C20 11.2448 19.2867 12.4706 17.9337 13.4257C16.5834 14.3789 14.6654 15 12.5 15C11.9849 15 11.4828 14.9648 10.9982 14.898C10.934 13.1045 9.18159 12 7.50001 12C6.92753 12 6.37589 12.1176 5.88506 12.3351C5.30127 11.6111 5.00001 10.8126 5.00001 10ZM12.5 17C11.7421 17 11.0036 16.9352 10.2949 16.8124C10.2111 16.9074 10.1215 16.9971 10.027 17.0814C10.0324 17.1351 10.0364 17.1937 10.0381 17.2566C10.0459 17.5458 10.0053 17.9424 9.80913 18.3641C9.38923 19.2667 8.42683 19.9562 6.7537 20.2187C4.68005 20.544 4.14608 21.1521 4.01748 21.3745C3.95033 21.4906 3.94254 21.5823 3.94406 21.6357C3.94468 21.6576 3.94702 21.6739 3.94861 21.6827C3.96296 21.7256 3.97448 21.7699 3.98295 21.8152C4.03316 22.0804 3.97228 22.3491 3.826 22.5638C3.74444 22.6836 3.63632 22.7865 3.50609 22.8627C3.40769 22.9205 3.29851 22.962 3.1823 22.9834C3.06521 23.0053 2.94748 23.0055 2.83406 22.9863C2.687 22.9617 2.55081 22.9051 2.43293 22.8238C2.31589 22.7434 2.21506 22.6375 2.13982 22.5103C2.1012 22.4453 2.06973 22.3756 2.0465 22.3023C2.04333 22.2927 2.04 22.2823 2.03655 22.2711C2.02484 22.2331 2.01167 22.1856 1.99902 22.1296C1.97383 22.0181 1.94991 21.8695 1.94487 21.6927C1.93466 21.3347 2.00276 20.8633 2.28609 20.3733C2.85846 19.3834 4.12384 18.6068 6.4437 18.2429C6.8529 18.1787 7.15489 18.0908 7.37778 17.9981C5.70287 17.9451 4.00001 16.8095 4.00001 15C4.00001 14.4998 4.14018 14.0417 4.37329 13.6452C3.52173 12.6101 3.00001 11.3665 3.00001 10C3.00001 7.93106 4.18951 6.15691 5.91292 4.94039C7.63895 3.72202 9.97098 3 12.5 3C15.029 3 17.3611 3.72202 19.0871 4.94039C20.8105 6.15691 22 7.93106 22 10C22 12.0689 20.8105 13.8431 19.0871 15.0596C17.3611 16.278 15.029 17 12.5 17ZM6.34227 14.3786C6.60474 14.1624 7.01132 14 7.50001 14C8.5482 14 9.00001 14.6444 9.00001 15C9.00001 15.0929 8.97952 15.185 8.9364 15.2772C8.85616 15.4487 8.687 15.6381 8.41217 15.7841C8.16534 15.9153 7.85219 16 7.50001 16C6.45182 16 6.00001 15.3556 6.00001 15C6.00001 14.8092 6.09212 14.5846 6.34227 14.3786Z" fill="#000000"/></svg>`;
+    const FULLSCREEN_ICON = `<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
+    const SAVE_ICON = `<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H5V5h10v4z"/></svg>`;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+
+    const getToolIcon = (tool) => {
+        switch (tool) {
+            case 'pen': return PEN_ICON_SVG;
+            case 'marker': return MARKER_ICON_SVG;
+            case 'eraser': return ERASER_ICON_SVG;
+            case 'lasso': return LASSO_ICON_SVG;
+            default: return PEN_ICON_SVG;
+        }
+    };
+
+    const getPointInSvg = (x, y) => {
+        if (!svg) return { x, y };
+        const point = svg.createSVGPoint();
+        point.x = x;
+        point.y = y;
+        try {
+            const ctm = svg.getScreenCTM();
+            if (ctm) {
+                return point.matrixTransform(ctm.inverse());
+            }
+        } catch (e) {
+
+        }
+        return { x, y };
+    };
+
+    Reveal.on('ready', event => {
+        svg = document.getElementById('reveal-notes-canvas');
+
+        if (!svg) {
+            svg = document.createElementNS(SVG_NS, "svg");
+            svg.id = 'reveal-notes-canvas';
+            svg.style.position = "absolute";
+            svg.style.top = "0";
+            svg.style.left = "0";
+            svg.style.width = "100%";
+            svg.style.height = "100%";
+            svg.style.zIndex = "100";
+            svg.style.touchAction = "none";
+            svg.style.pointerEvents = "none";
+
+
+            const slidesContainer = document.querySelector('.reveal .slides');
+            if (slidesContainer) {
+                slidesContainer.appendChild(svg);
+            } else {
+                document.body.appendChild(svg);
+            }
+        }
+
+        injectNotesUIStyles();
+
+
+        const revealContainer = document.querySelector('.reveal');
+        if (revealContainer) {
+            revealContainer.addEventListener('pointermove', (e) => {
+                if (penStyleLock) return;
+
+                if (e.pointerType === 'pen') {
+                    setCursorNone();
+                    penStyleLock = true;
+                    delayTimeout = setTimeout(() => { penStyleLock = false; }, 100);
+                } else {
+                    setCursorDefault();
+                }
+            });
+        }
+
+        const existingUI = document.querySelectorAll('#notes-tool-container, #notes-delete-button-container, #notes-tool-tip, #notes-tool-menu');
+        existingUI.forEach(el => el.remove());
+
+        createNotesUI();
+        createTooltipUI();
+
+        setupPenEvents();
+
+        window.addEventListener("pointermove", (e) => {
+            if (
+                e.target.closest('#notes-tool-container') ||
+                e.target.closest('#notes-delete-button-container') ||
+                e.target.closest('#notes-tool-menu')
+            ) return;
+        });
+
+        Reveal.on('slidechanged', updateActiveSlideGroup);
+        updateActiveSlideGroup();
+    });
+
+    function updateActiveSlideGroup() {
+        clearSelection();
+        if (!svg) return;
+
+        const groups = svg.querySelectorAll('g.slide-drawing');
+        groups.forEach(g => g.style.display = 'none');
+
+        const indices = Reveal.getIndices();
+        const vIndex = indices.v || 0;
+        const id = `slide-${indices.h}-${vIndex}`;
+
+        let group = svg.querySelector(`g[id="${id}"]`);
+        if (!group) {
+            group = document.createElementNS(SVG_NS, "g");
+            group.setAttribute("id", id);
+            group.setAttribute("class", "slide-drawing");
+            svg.appendChild(group);
+        }
+
+        // Ensure marker and pen sub-groups exist for layering
+        let markerStrokes = group.querySelector('.marker-strokes');
+        if (!markerStrokes) {
+            markerStrokes = document.createElementNS(SVG_NS, "g");
+            markerStrokes.setAttribute("class", "marker-strokes");
+            group.appendChild(markerStrokes); // Append marker group first (bottom layer)
+        }
+
+        let penStrokes = group.querySelector('.pen-strokes');
+        if (!penStrokes) {
+            penStrokes = document.createElementNS(SVG_NS, "g");
+            penStrokes.setAttribute("class", "pen-strokes");
+            group.appendChild(penStrokes); // Append pen group second (top layer)
+        }
+
+
+        group.style.display = 'block';
+        currentSlideGroup = group;
+    }
+
+
+    function beginPenSession(e) {
+        penSession = true;
+        svg.style.pointerEvents = "all";
+        try { svg.setPointerCapture(e.pointerId); } catch (err) { }
+    }
+
+    function endPenSession(e) {
+        penSession = false;
+        try { if (svg.hasPointerCapture?.(e.pointerId)) svg.releasePointerCapture(e.pointerId); } catch (err) { }
+        svg.style.pointerEvents = "none";
+    }
+
+
+    async function fetchAsDataURL(url) {
+        const response = await fetch(url);
+        const blob = await response.blob();
+
+        return new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    function setCursorNone() {
+        const reveal = document.querySelector(".reveal");
+        if (reveal) reveal.style.cursor = "none";
+        if (svg) svg.style.cursor = "none";
+
+    }
+    function setCursorDefault() {
+        const reveal = document.querySelector(".reveal");
+        if (reveal) reveal.style.cursor = "default";
+        if (svg) svg.style.cursor = "default";
+    }
+
+
+    function setTool(toolName) {
+        currentTool = toolName;
+
+        const container = document.getElementById('notes-tool-container');
+        if (container) {
+            const buttons = container.querySelectorAll('.notes-tool-select-btn');
+            buttons.forEach(btn => {
+                if (btn.dataset.tool === toolName) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+        }
+
+        const currentBtn = document.getElementById('notes-current-tool-btn');
+        if (currentBtn) {
+            currentBtn.innerHTML = getToolIcon(toolName);
+            currentBtn.title = `Current tool: ${toolName[0].toUpperCase() + toolName.slice(1)}`;
+        }
+    }
+
+    function getDistance(p1, p2) {
+        return Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    }
+
+    function createPathData(points) {
+        if (!points || points.length === 0) return "";
+        let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
+        if (points.length < 2) return d;
+        if (points.length === 2) {
+            d += " L " + points[1].x.toFixed(2) + " " + points[1].y.toFixed(2);
+        } else {
+            let P0 = points[0];
+            let P1 = points[1];
+            d += " L " + P1.x.toFixed(2) + " " + P1.y.toFixed(2);
+            for (let i = 1; i < points.length - 1; i++) {
+                const P2 = points[i + 1];
+                const midX2 = (P1.x + P2.x) / 2;
+                const midY2 = (P1.y + P2.y) / 2;
+                d += " Q " + P1.x.toFixed(2) + "," + P1.y.toFixed(2) + " " + midX2.toFixed(2) + "," + midY2.toFixed(2);
+                P0 = P1;
+                P1 = P2;
+            }
+        }
+        return d;
+    }
+
+    function isPointInPolygon(point, vs) {
+        let x = point.x, y = point.y;
+        let inside = false;
+        for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+            let xi = vs[i].x, yi = vs[i].y;
+            let xj = vs[j].x, yj = vs[j].y;
+            let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    function showTooltipIcon(x, y, iconSvg, duration) {
+        if (tooltipTimeout) clearTimeout(tooltipTimeout);
+        toolTipElement.innerHTML = iconSvg;
+        toolTipElement.style.left = x + 15 + 'px';
+        toolTipElement.style.top = y - 15 + 'px';
+        toolTipElement.style.display = 'flex';
+        if (duration) {
+            tooltipTimeout = setTimeout(() => {
+                toolTipElement.style.display = 'none';
+            }, duration);
+        }
+    }
+
+    function hideTooltipIcon() {
+        if (tooltipTimeout) clearTimeout(tooltipTimeout);
+        toolTipElement.style.display = 'none';
+    }
+
+    function eraseAt(x, y) {
+        showTooltipIcon(x, y, ERASER_ICON_SVG, 200);
+        const element = document.elementFromPoint(x, y);
+        if (element && (element.tagName === 'path' || element.tagName === 'circle') && element.closest('.slide-drawing') === currentSlideGroup) {
+            if (element.getAttribute('id') === 'current-lasso') return;
+            element.remove();
+        }
+    }
+
+    function performLassoSelection() {
+        if (lassoPoints.length < 3) return;
+
+        selectedElements = [];
+        const children = Array.from(currentSlideGroup.querySelectorAll('path, circle'));
+        const SAMPLE_STEP = 10;
+
+        children.forEach(el => {
+            if (el.id === 'current-lasso') return;
+
+            if (el.tagName === 'path') {
+                const length = el.getTotalLength();
+                let isFullyInside = true;
+                for (let i = 0; i <= length; i += SAMPLE_STEP) {
+                    const p = el.getPointAtLength(i);
+                    if (!isPointInPolygon(p, lassoPoints)) {
+                        isFullyInside = false;
+                        break;
+                    }
+                }
+                if (isFullyInside) {
+                    const endP = el.getPointAtLength(length);
+                    if (!isPointInPolygon(endP, lassoPoints)) {
+                        isFullyInside = false;
+                    }
+                }
+                if (isFullyInside) {
+                    selectedElements.push(el);
+                    el.classList.add('selected-stroke');
+                    el.style.stroke = "#ff0000";
+                    el.style.opacity = "0.7";
+                }
+            } else if (el.tagName === 'circle') {
+                const cx = parseFloat(el.getAttribute('cx'));
+                const cy = parseFloat(el.getAttribute('cy'));
+                const centerPoint = { x: cx, y: cy };
+                if (isPointInPolygon(centerPoint, lassoPoints)) {
+                    selectedElements.push(el);
+                    el.classList.add('selected-stroke');
+                    el.style.fill = "#ff0000";
+                    el.style.opacity = "0.7";
+                }
+            }
+        });
+    }
+
+
+    function absorbPenEvents(evt) {
+        if (evt.pointerType === 'pen') {
+            evt.preventDefault();
+            evt.stopPropagation();
+            return true;
+        }
+        return false;
+    }
+
+
+    function clearSelection() {
+        svg.style.pointerEvents = "none";
+
+        if (isDraggingSelection) {
+            try { svg.releasePointerCapture(); } catch (e) { }
+        }
+
+        selectedElements.forEach(el => {
+            el.classList.remove('selected-stroke');
+
+            if (el.tagName === 'path') {
+                el.style.stroke = "";
+            } else if (el.tagName === 'circle') {
+                el.style.fill = "";
+            }
+
+            el.style.opacity = "";
+            el.style.transform = "";
+
+            if (selectionTransform.x !== 0 || selectionTransform.y !== 0) {
+                const currentTrans = el.getAttribute('transform') || "";
+                el.setAttribute('transform', `${currentTrans} translate(${selectionTransform.x}, ${selectionTransform.y})`);
+            }
+        });
+
+        selectedElements = [];
+        selectionTransform = { x: 0, y: 0 };
+        isMovingSelection = false;
+        isDraggingSelection = false;
+
+        const lassoEl = document.getElementById('current-lasso');
+        if (lassoEl) lassoEl.remove();
+
+        const deleteBtnContainer = document.getElementById('notes-delete-button-container');
+        if (deleteBtnContainer) deleteBtnContainer.style.display = 'none';
+    }
+
+    function moveSelectedElements(dx, dy) {
+        selectedElements.forEach(el => {
+            el.style.transform = `translate(${selectionTransform.x + dx}px, ${selectionTransform.y + dy}px)`;
+        });
+    }
+
+    function swallowUIEvents(el) {
+        ['pointerdown', 'pointermove', 'pointerup', 'click'].forEach(type => {
+            el.addEventListener(type, ev => {
+                ev.stopPropagation();
+            });
+        });
+    }
+
+    function setupPenEvents() {
+        window.addEventListener('contextmenu', (e) => {
+            if (e.pointerType === 'pen') e.preventDefault();
+        });
+
+        window.addEventListener('pointerdown', (e) => {
+            if (e.pointerType !== 'pen') {
+                svg.style.pointerEvents = "none";
+                return;
+            }
+            beginPenSession(e);
+
+
+            if (
+                e.target.closest('#notes-tool-container') ||
+                e.target.closest('#notes-delete-button-container') ||
+                e.target.closest('#notes-tool-menu')
+            ) return;
+
+            if (!e.target.closest('#notes-tool-menu') && document.getElementById('notes-tool-menu')) {
+                document.getElementById('notes-tool-menu').classList.remove('active');
+            }
+
+
+            if (e.pointerType === 'pen') {
+                absorbPenEvents(e);
+                svg.style.pointerEvents = "all";
+            }
+
+            e.preventDefault();
+
+            const svgPoint = getPointInSvg(e.clientX, e.clientY);
+
+            if (isMovingSelection) {
+                e.stopPropagation();
+                isDraggingSelection = true;
+                dragStartPos = { x: svgPoint.x, y: svgPoint.y };
+                svg.style.pointerEvents = "all";
+                svg.setPointerCapture(e.pointerId);
+                return;
+            }
+
+            isDrawing = false;
+            isErasing = false;
+            isLassoing = false;
+
+            const isEraserButton = (e.buttons & 32);
+            const isLassoButton = (e.buttons & 2);
+
+            if (currentTool === 'eraser' || isEraserButton) {
+                isErasing = true;
+                clearSelection();
+                eraseAt(e.clientX, e.clientY);
+                e.stopPropagation();
+            }
+            else if (currentTool === 'lasso' || isLassoButton) {
+                isLassoing = true;
+                clearSelection();
+                lassoPoints = [];
+                lassoPoints.push({ x: svgPoint.x, y: svgPoint.y });
+
+                showTooltipIcon(e.clientX, e.clientY, LASSO_ICON_SVG, 200);
+
+                currentPathElement = document.createElementNS(SVG_NS, "path");
+                currentPathElement.setAttribute("id", "current-lasso");
+                currentPathElement.setAttribute("stroke", "#555");
+                currentPathElement.setAttribute("stroke-width", "2");
+                currentPathElement.setAttribute("stroke-dasharray", "5,5");
+                currentPathElement.setAttribute("fill", "rgba(0,0,0,0.05)");
+                currentPathElement.setAttribute("d", `M ${svgPoint.x} ${svgPoint.y}`);
+                svg.appendChild(currentPathElement);
+
+                e.stopPropagation();
+            }
+            else {
+                clearSelection();
+
+                isDrawing = true;
+                currentPoints = [];
+                const startPoint = { x: svgPoint.x, y: svgPoint.y };
+                currentPoints.push(startPoint);
+
+                currentPathElement = document.createElementNS(SVG_NS, "path");
+                currentPathElement.style.pointerEvents = "all";
+                currentPathElement.setAttribute("stroke", currentColor);
+                currentPathElement.setAttribute("fill", "none");
+                currentPathElement.setAttribute("stroke-linecap", "round");
+                currentPathElement.setAttribute("stroke-linejoin", "round");
+
+                let activeWidth = strokeWidths[currentTool] || 3;
+
+                if (currentTool === 'marker') {
+                    currentPathElement.setAttribute("stroke-width", activeWidth);
+                    currentPathElement.setAttribute("stroke-opacity", "0.6");
+                    currentPathElement.style.mixBlendMode = "multiply";
+                } else {
+                    currentPathElement.setAttribute("stroke-width", activeWidth);
+                }
+
+                currentPathElement.setAttribute("d", `M ${startPoint.x.toFixed(1)} ${startPoint.y.toFixed(1)}`);
+
+                if (currentTool === 'marker') {
+                    currentSlideGroup.querySelector('.marker-strokes').appendChild(currentPathElement);
+                } else {
+                    currentSlideGroup.querySelector('.pen-strokes').appendChild(currentPathElement);
+                }
+
+                e.stopPropagation();
+            }
+        }, { passive: false });
+
+        window.addEventListener('pointerleave', (e) => {
+            if (e.pointerType === 'pen') {
+                hideTooltipIcon();
+            }
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (e.pointerType !== 'pen' || !penSession) return;
+            if (
+                e.target.closest('#notes-tool-container') ||
+                e.target.closest('#notes-delete-button-container') ||
+                e.target.closest('#notes-tool-menu')
+            ) return;
+
+
+            if (e.pointerType === 'pen') {
+                absorbPenEvents(e);
+                svg.style.pointerEvents = "all";
+            }
+
+
+            const isEraserButton = (e.buttons & 32);
+            const isLassoButton = (e.buttons & 2);
+            const isAnyPenButtonDown = isEraserButton || isLassoButton;
+
+            if (isAnyPenButtonDown && !wasPenButtonDown) {
+                if (isEraserButton) {
+                    showTooltipIcon(e.clientX, e.clientY, ERASER_ICON_SVG, 500);
+                } else if (isLassoButton) {
+                    showTooltipIcon(e.clientX, e.clientY, LASSO_ICON_SVG, 500);
+                }
+            }
+            wasPenButtonDown = isAnyPenButtonDown;
+
+            if (e.buttons === 0) {
+                isDrawing = isErasing = isLassoing = isDraggingSelection = false;
+                currentPathElement = null;
+                if (svg.hasPointerCapture(e.pointerId)) {
+                    try { svg.releasePointerCapture(e.pointerId); } catch (err) { }
+                }
+                return;
+            }
+
+            const svgPoint = getPointInSvg(e.clientX, e.clientY);
+
+            if (isDraggingSelection) {
+                e.preventDefault();
+                e.stopPropagation();
+                const dx = svgPoint.x - dragStartPos.x;
+                const dy = svgPoint.y - dragStartPos.y;
+                moveSelectedElements(dx, dy);
+                return;
+            }
+
+            if (!isDrawing && !isErasing && !isLassoing && !isMovingSelection && !isDraggingSelection) {
+                if ((e.buttons & 32) || (e.buttons & 2)) isErasing = true;
+            }
+
+            if (isErasing) {
+                e.preventDefault();
+                e.stopPropagation();
+                const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+                events.forEach(ev => eraseAt(ev.clientX, ev.clientY));
+                return;
+            }
+
+            if (isLassoing && currentPathElement) {
+                e.preventDefault();
+                e.stopPropagation();
+                lassoPoints.push({ x: svgPoint.x, y: svgPoint.y });
+                const d = currentPathElement.getAttribute("d");
+                currentPathElement.setAttribute("d", d + ` L ${svgPoint.x} ${svgPoint.y}`);
+                return;
+            }
+
+            if (isDrawing && currentPathElement) {
+                e.preventDefault();
+                e.stopPropagation();
+                const p = { x: svgPoint.x, y: svgPoint.y };
+
+                const last = currentPoints[currentPoints.length - 1];
+                if (getDistance(last, p) < 2) return;
+
+                currentPoints.push(p);
+
+                const pathData = createPathData(currentPoints);
+                if (pathData) {
+                    currentPathElement.setAttribute("d", pathData);
+                }
+            }
+        }, { passive: false });
+
+        window.addEventListener('pointerup', (e) => {
+
+            if (e.pointerType !== 'pen') return;
+            endPenSession(e);
+
+            if (
+                e.target.closest('#notes-tool-container') ||
+                e.target.closest('#notes-delete-button-container') ||
+                e.target.closest('#notes-tool-menu')
+            ) return;
+
+
+            if (e.pointerType !== 'pen') return;
+
+            if (e.pointerType === 'pen') {
+                absorbPenEvents(e);
+                svg.style.pointerEvents = "all";
+            }
+
+
+            if (svg.hasPointerCapture(e.pointerId)) {
+                svg.releasePointerCapture(e.pointerId);
+            }
+
+            const svgPoint = getPointInSvg(e.clientX, e.clientY);
+
+            if (isDraggingSelection) {
+                e.stopPropagation();
+                isDraggingSelection = false;
+                selectionTransform.x += (svgPoint.x - dragStartPos.x);
+                selectionTransform.y += (svgPoint.y - dragStartPos.y);
+                clearSelection();
+                setTool('pen');
+                return;
+            }
+
+            if (isLassoing) {
+                e.stopPropagation();
+                isLassoing = false;
+                if (currentPathElement) {
+                    const d = currentPathElement.getAttribute("d");
+                    currentPathElement.setAttribute("d", d + " Z");
+                }
+
+                performLassoSelection();
+
+                if (selectedElements.length > 0) {
+                    isMovingSelection = true;
+                    selectedElements.forEach(el => el.style.stroke = "#22c55e");
+                    svg.style.pointerEvents = "all";
+                    document.getElementById('notes-delete-button-container').style.display = 'flex';
+                } else {
+                    const lassoEl = document.getElementById('current-lasso');
+                    if (lassoEl) lassoEl.remove();
+                }
+                currentPathElement = null;
+                return;
+            }
+
+            endStroke();
+        });
+
+        window.addEventListener('pointercancel', (e) => {
+            if (e.pointerType !== 'pen') return;
+            endPenSession(e);
+            if (e.pointerType === 'pen') endStroke();
+        });
+
+        function endStroke() {
+            isErasing = false;
+            if (isDrawing) {
+                isDrawing = false;
+
+                if (currentPathElement && currentPoints.length === 1) {
+                    const point = currentPoints[0];
+                    const width = strokeWidths[currentTool] || 3;
+
+                    currentPathElement.remove();
+
+                    const dot = document.createElementNS(SVG_NS, "circle");
+                    dot.setAttribute("cx", point.x);
+                    dot.setAttribute("cy", point.y);
+                    dot.setAttribute("r", width / 2);
+                    dot.setAttribute("fill", currentColor);
+                    dot.style.pointerEvents = "all";
+
+                    if (currentTool === 'marker') {
+                        dot.setAttribute("fill-opacity", "0.6");
+                        dot.style.mixBlendMode = "multiply";
+                    }
+
+                    if (currentTool === 'marker') {
+                        currentSlideGroup.querySelector('.marker-strokes').appendChild(dot);
+                    } else {
+                        currentSlideGroup.querySelector('.pen-strokes').appendChild(dot);
+                    }
+
+                } else if (currentPathElement && currentPoints.length > 1) {
+                    const last = currentPoints[currentPoints.length - 1];
+                    const existingD = currentPathElement.getAttribute("d");
+                    currentPathElement.setAttribute("d", existingD + ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`);
+                }
+                currentPathElement = null;
+            }
+        }
+    }
+
+    function createTooltipUI() {
+        toolTipElement = document.createElement('div');
+        toolTipElement.id = 'notes-tool-tip';
+        document.body.appendChild(toolTipElement);
+    }
+
+    async function saveSlidesAsHTML() {
+        const saveButton = document.querySelector('.notes-ui-button[title="Save Slides with Notes"]');
+        const originalButtonContent = saveButton.innerHTML;
+        saveButton.innerHTML = '...';
+        saveButton.disabled = true;
+
+        try {
+            clearSelection();
+
+            const menu = document.getElementById('notes-tool-menu');
+            if (menu) menu.classList.remove('active');
+
+            const uiElements = [
+                document.getElementById('notes-tool-container'),
+                document.getElementById('notes-delete-button-container'),
+                document.getElementById('notes-tool-tip'),
+                document.getElementById('notes-tool-menu')
+            ];
+            uiElements.forEach(el => el && (el.style.display = 'none'));
+
+            const drawingGroups = svg.querySelectorAll('g.slide-drawing');
+            drawingGroups.forEach(g => g.style.display = 'block');
+
+            const docClone = document.documentElement.cloneNode(true);
+
+            const allDrawingsInClone = docClone.querySelectorAll('g.slide-drawing');
+            allDrawingsInClone.forEach(g => g.style.display = 'none');
+
+            const firstDrawingInClone = docClone.querySelector('g#slide-0-0');
+            if (firstDrawingInClone) {
+                firstDrawingInClone.style.display = 'block';
+            }
+
+            const imgElements = docClone.querySelectorAll('img');
+            for (const img of imgElements) {
+                if (!img.src.startsWith('data:')) {
+                    const abs = new URL(img.src, document.baseURI).href;
+                    try {
+                        img.src = await fetchAsDataURL(abs);
+                    } catch (err) {
+                        console.warn("Could not embed image:", abs);
+                    }
+                }
+            }
+
+            const linkElements = docClone.querySelectorAll('link[rel="stylesheet"]');
+            for (const link of linkElements) {
+                const href = new URL(link.href, document.baseURI).href;
+                try {
+                    const response = await fetch(href);
+                    if (response.ok) {
+                        const cssText = await response.text();
+                        const styleElement = document.createElement('style');
+
+                        styleElement.textContent = cssText;
+                        styleElement.dataset.sourceHref = href;
+
+                        link.parentNode.replaceChild(styleElement, link);
+                    }
+                } catch (e) {
+                    console.warn(e);
+                }
+            }
+
+
+            // Inline CSS backgrounds
+            const styleElements = docClone.querySelectorAll('style');
+            for (const style of styleElements) {
+                let css = style.textContent;
+                const baseHref = style.dataset.sourceHref || document.baseURI;
+
+                const urlRegex = /url\(["']?([^"')]+)["']?\)/g;
+                const matches = [...css.matchAll(urlRegex)];
+
+                for (const match of matches) {
+                    const originalUrl = match[1];
+
+                    if (!originalUrl.startsWith('data:')) {
+                        try {
+                            const abs = new URL(originalUrl, baseHref).href;
+                            const dataUrl = await fetchAsDataURL(abs);
+                            css = css.replaceAll(originalUrl, dataUrl);
+                        } catch (err) {
+                            console.warn("Could not embed css background:", originalUrl);
+                        }
+                    }
+                }
+
+                style.textContent = css;
+            }
+
+
+            const scriptElements = docClone.querySelectorAll('script[src]');
+            for (const script of scriptElements) {
+                const src = new URL(script.src, document.baseURI).href;
+                try {
+                    const response = await fetch(src);
+                    if (response.ok) {
+                        const jsText = await response.text();
+                        const newScript = document.createElement('script');
+                        newScript.textContent = jsText;
+                        if (script.type) newScript.type = script.type;
+                        script.parentNode.replaceChild(newScript, script);
+                    }
+                } catch (e) { console.warn(e); }
+            }
+
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10);
+
+            const metaTag = document.querySelector('meta[name="lecture-title"]');
+            const filePrefix = metaTag ? metaTag.getAttribute('content') : 'presentation';
+
+            const finalFilename = `${filePrefix}_${dateStr}.html`;
+
+            const html = '<!DOCTYPE html>\n' + docClone.outerHTML;
+            const blob = new Blob([html], { type: 'text/html' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+
+            a.download = finalFilename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+
+        } catch (error) {
+            console.error("Failed to save:", error);
+            alert("Error saving presentation.");
+        } finally {
+            const uiElements = [
+                document.getElementById('notes-tool-container'),
+                document.getElementById('notes-delete-button-container'),
+                document.getElementById('notes-tool-tip'),
+                document.getElementById('notes-tool-menu')
+            ];
+            uiElements.forEach(el => el && (el.style.display = ''));
+            updateActiveSlideGroup();
+            saveButton.innerHTML = originalButtonContent;
+            saveButton.disabled = false;
+        }
+    }
+
+    function injectNotesUIStyles() {
+        const style = document.createElement('style');
+        style.innerHTML = `
+:root {
+--notes-button-size: 28px;
+--notes-icon-size: 16px;
+--notes-gap: 6px;
+--notes-left: 60px;
+--notes-bottom: 18px;
+}
+
+#notes-tool-container {
+position: fixed; 
+bottom: var(--notes-bottom);
+left: var(--notes-left);
+z-index: 1001;
+display: flex;
+flex-direction: row;
+align-items: center;
+background: #f8f9fa;
+border: 1px solid #ced4da;
+border-radius: 50px;
+padding: 4px;
+box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+transition: all 0.3s ease-in-out;
+}
+
+#notes-tool-container > *:not(:first-child) {
+opacity: 0;
+max-width: 0;
+margin-left: 0;
+overflow: hidden;
+transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
+white-space: nowrap;
+}
+ 
+#notes-tool-container:hover > *:not(:first-child) {
+opacity: 1;
+max-width: var(--notes-button-size);
+margin-left: var(--notes-gap);
+}
+
+.notes-toolbar-divider {
+width: 1px;
+height: 18px;
+background: #ced4da;
+transition: opacity 0.3s ease;
+}
+
+.notes-ui-button { 
+width: var(--notes-button-size); 
+height: var(--notes-button-size); 
+background: #f8f9fa; 
+border: 1px solid #ced4da;
+border-radius: 50%; 
+cursor: pointer; 
+display: flex; 
+align-items: center; 
+justify-content: center;
+box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+transition: background-color 0.2s, transform 0.1s;
+flex-shrink: 0;
+}
+.notes-ui-button:hover { background-color: #e9ecef; }
+.notes-ui-button svg { width: var(--notes-icon-size); height: var(--notes-icon-size); fill: #495057; }
+
+.notes-tool-select-btn.active {
+background-color: #325B8B;
+border-color: #325B8B;
+}
+.notes-tool-select-btn.active svg {
+fill: #ffffff;
+}
+
+#notes-tool-menu {
+display: none; 
+background: #fff; 
+border-radius: 8px; 
+padding: 12px;
+position: fixed; 
+bottom: calc(var(--notes-bottom) + var(--notes-button-size) + 12px);
+left: var(--notes-left);
+width: 220px;
+box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+border: 1px solid #dee2e6;
+z-index: 1002;
+}
+#notes-tool-menu.active { display: block; }
+.notes-tool-section { margin-bottom: 12px; }
+.notes-tool-section h4 { margin: 0 0 8px 0; font-size: 14px; color: #212529; font-family: sans-serif; border-bottom: 1px solid #e9ecef; }
+
+#notes-color-palette { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.color-swatch { aspect-ratio: 1; border-radius: 50%; cursor: pointer; border: 1px solid #adb5bd; }
+.color-swatch.selected { border-color: #000; transform: scale(1.1); }
+
+#notes-stroke-width-slider {
+-webkit-appearance: none;
+appearance: none;
+width: 100%;
+cursor: pointer;
+background: #ffffff;
+overflow: hidden;
+border-radius: 16px;
+}
+#notes-stroke-width-slider::-webkit-slider-thumb {
+-webkit-appearance: none;
+appearance: none;
+height: 15px;
+width: 15px;
+background-color: #333333;
+border-radius: 50%;
+box-shadow: -407px 0 0 400px rgb(90, 90, 90);
+}
+#notes-stroke-width-slider::-webkit-slider-runnable-track {
+-webkit-appearance: none;
+appearance: none;
+height: 15px;
+background: #cccccc;
+border-radius: 16px;
+}
+
+#notes-delete-button-container {
+position: fixed;
+bottom: 10px;
+left: 50%;
+transform: translateX(-50%);
+z-index: 1001;
+display: none; 
+}
+#notes-delete-button {
+width: 36px; height: 36px;
+background: #dc2626; border: 1px solid #b91c1c;
+border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+#notes-delete-button svg { width: 18px; height: 18px; fill: #ffffff; }
+
+#notes-tool-tip {
+position: fixed;
+z-index: 9999;
+width: 28px;
+height: 28px;
+background: transparent;
+border-radius: 50%;
+display: none; 
+align-items: center;
+justify-content: center;
+pointer-events: none;
+transform: translate(-50%, -50%);
+transition: opacity 0.2s;
+}
+#notes-tool-tip svg {
+width: 16px;
+height: 16px;
+fill: black;
+}
+
+.selected-stroke { transition: opacity 0.2s; }
+`;
+        document.head.appendChild(style);
+    }
+
+    function createNotesUI() {
+        const container = document.createElement('div');
+        container.id = 'notes-tool-container';
+
+        const menu = document.createElement('div');
+        menu.id = 'notes-tool-menu';
+
+        const colorSection = document.createElement('div');
+        colorSection.className = 'notes-tool-section';
+        colorSection.innerHTML = `<h4>Color</h4>`;
+        const colorPalette = document.createElement('div');
+        colorPalette.id = 'notes-color-palette';
+        const colors = [
+            '#ffffff', '#F7D0D1', '#E0E9F4', '#E6EEDD', '#FBE3D6', '#B1D7EC', '#DFD4EA',
+            '#F2F2F2', '#E67375', '#B1C8E3', '#B5CD98', '#F2AA84', '#7ABBDE', '#A07FC0',
+            '#BFBFBF', '#C72426', '#6290C6', '#83AC54', '#E97132', '#2D87B9', '#6a4590',
+            '#7F7F7F', '#951B1D', '#325B8B', '#62813F', '#C04F15', '#16445C', '#563973',
+            '#000000', '#631213', '#213D5C', '#42562A', '#80350E', '#091B25', '#3D2852'
+        ];
+        colors.forEach(color => {
+            const swatch = document.createElement('div');
+            swatch.className = 'color-swatch';
+            swatch.style.backgroundColor = color;
+            swatch.dataset.color = color;
+            if (color === currentColor) swatch.classList.add('selected');
+            colorPalette.appendChild(swatch);
+        });
+
+        colorSection.appendChild(colorPalette);
+
+        menu.addEventListener('click', (e) => {
+            const swatch = e.target.closest('.color-swatch');
+            if (swatch) {
+                currentColor = swatch.dataset.color;
+
+                if (currentTool !== 'pen' && currentTool !== 'marker') {
+                    setTool('pen');
+                    menu.classList.add('active');
+                } else {
+                    setTool(currentTool);
+                }
+                clearSelection();
+
+                const palette = swatch.closest('#notes-color-palette');
+                if (palette) {
+                    const currentSelected = palette.querySelector('.selected');
+                    if (currentSelected) currentSelected.classList.remove('selected');
+                }
+                swatch.classList.add('selected');
+
+                // Close menu after color is picked
+                menu.classList.remove('active');
+            }
+        });
+
+        const widthSection = document.createElement('div');
+        widthSection.className = 'notes-tool-section';
+        widthSection.innerHTML = `<h4>Width (<span id="stroke-width-value">${strokeWidths[currentTool]}</span>px)</h4>`;
+
+        const widthSlider = document.createElement('input');
+        widthSlider.type = 'range';
+        widthSlider.id = 'notes-stroke-width-slider';
+        widthSlider.min = 1;
+        widthSlider.max = 30;
+        widthSlider.step = 1;
+        widthSlider.value = strokeWidths[currentTool];
+
+        widthSlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            strokeWidths[currentTool] = val;
+            document.getElementById('stroke-width-value').textContent = val;
+        });
+        widthSection.appendChild(widthSlider);
+
+        menu.appendChild(colorSection);
+        menu.appendChild(widthSection);
+        document.body.appendChild(menu);
+
+        const currentToolBtn = document.createElement('div');
+        currentToolBtn.id = 'notes-current-tool-btn';
+        currentToolBtn.className = 'notes-ui-button';
+        currentToolBtn.title = `Current tool: ${currentTool[0].toUpperCase() + currentTool.slice(1)}`;
+        currentToolBtn.innerHTML = getToolIcon(currentTool);
+        currentToolBtn.onclick = () => {
+            hideTooltipIcon();
+            const menuEl = document.getElementById('notes-tool-menu');
+            menuEl.classList.toggle('active');
+        };
+        container.appendChild(currentToolBtn);
+
+        const createToolBtn = (id, icon, title) => {
+            const btn = document.createElement('div');
+            btn.className = 'notes-ui-button notes-tool-select-btn';
+            if (currentTool === id) btn.classList.add('active');
+            btn.dataset.tool = id;
+            btn.title = title;
+            btn.innerHTML = icon;
+            btn.onclick = () => {
+                hideTooltipIcon();
+                if (id !== 'lasso') clearSelection();
+
+                // Only open menu if the tool is already selected
+                if (currentTool === id) {
+                    if (id === 'pen' || id === 'marker') {
+                        menu.classList.toggle('active');
+                    }
+                } else {
+                    // Switching to a new tool
+                    menu.classList.remove('active');
+                    setTool(id);
+                }
+
+                // Update slider logic even if menu is closed, so it's ready when opened
+                const slider = document.getElementById('notes-stroke-width-slider');
+                const label = document.getElementById('stroke-width-value');
+                if (slider && label && (id === 'pen' || id === 'marker')) {
+                    slider.value = strokeWidths[id];
+                    label.textContent = strokeWidths[id];
+                }
+            };
+            return btn;
+        };
+
+        container.appendChild(createToolBtn('pen', PEN_ICON_SVG, 'Pen'));
+        container.appendChild(createToolBtn('marker', MARKER_ICON_SVG, 'Marker'));
+        container.appendChild(createToolBtn('eraser', ERASER_ICON_SVG, 'Eraser'));
+        container.appendChild(createToolBtn('lasso', LASSO_ICON_SVG, 'Lasso Select'));
+
+        const divider = document.createElement('div');
+        divider.className = 'notes-toolbar-divider';
+        container.appendChild(divider);
+
+        const fullscreenButton = document.createElement('div');
+        fullscreenButton.className = 'notes-ui-button';
+        fullscreenButton.title = 'Toggle Fullscreen';
+        fullscreenButton.innerHTML = FULLSCREEN_ICON;
+        fullscreenButton.onclick = () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`Error: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        };
+        container.appendChild(fullscreenButton);
+
+        const saveButton = document.createElement('div');
+        saveButton.className = 'notes-ui-button';
+        saveButton.title = 'Save Slides with Notes';
+        saveButton.innerHTML = SAVE_ICON;
+        saveButton.onclick = saveSlidesAsHTML;
+        container.appendChild(saveButton);
+
+        document.body.appendChild(container);
+
+        const deleteBtnContainer = document.createElement('div');
+        deleteBtnContainer.id = 'notes-delete-button-container';
+        const deleteBtn = document.createElement('div');
+        deleteBtn.id = 'notes-delete-button';
+        deleteBtn.title = 'Delete Selection';
+        deleteBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
+        deleteBtn.onclick = () => {
+            selectedElements.forEach(el => el.remove());
+            const lassoEl = document.getElementById('current-lasso');
+            if (lassoEl) lassoEl.remove();
+            clearSelection();
+            setTool('pen');
+        };
+        deleteBtnContainer.appendChild(deleteBtn);
+        document.body.appendChild(deleteBtnContainer);
+
+        swallowUIEvents(menu);
+        swallowUIEvents(container);
+        swallowUIEvents(deleteBtnContainer);
+    }
+};
