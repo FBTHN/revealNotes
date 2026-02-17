@@ -907,7 +907,7 @@ const initNotes = function (Reveal) {
 --notes-icon-size: 16px;
 --notes-gap: 6px;
 --notes-left: 60px;
---notes-bottom: 18px;
+--notes-bottom: 10px;
 }
 
 #notes-tool-container {
