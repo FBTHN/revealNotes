@@ -1,12 +1,12 @@
-title: revealNotes
+title: revealHandwriting
 author:  Felix Boy
 version: 1.0.0
 quarto-required: ">=1.8.0"
 contributes:
   revealjs-plugins:
-    - name: revealNotes
+    - name: revealHandwriting
       script:
-        - revealNotes.js
+        - revealHandwriting.js
       stylesheet:
-        - revealNotes.css
+        - revealHandwriting.css
 

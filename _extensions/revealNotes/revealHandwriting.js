@@ -29,14 +29,14 @@
  
 *******************************************************************/
 
-window.revealNotes = window.revealNotes || {
-    id: 'revealNotes',
+window.revealHandwriting = window.revealHandwriting || {
+    id: 'revealHandwriting',
     init: function (deck) {
-        initNotes(deck);
+        initHandwriting(deck);
     }
 };
 
-const initNotes = function (Reveal) {
+const initWriting = function (Reveal) {
     let svg;
     let isDrawing = false;
     let isErasing = false;
