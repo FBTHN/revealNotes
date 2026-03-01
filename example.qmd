@@ -1,9 +1,9 @@
 ---
-title: "RevealNotes Example"
+title: "RevealHandwriting Example"
 format:
   revealjs: default
 revealjs-plugins:
-  - revealnotes
+  - revealHandwriting
 ---
 
 # In the morning
