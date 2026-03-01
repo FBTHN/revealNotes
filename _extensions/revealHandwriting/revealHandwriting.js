@@ -36,7 +36,7 @@ window.revealHandwriting = window.revealHandwriting || {
     }
 };
 
-const initWriting = function (Reveal) {
+const initHandwriting = function (Reveal) {
     let svg;
     let isDrawing = false;
     let isErasing = false;
