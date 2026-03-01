@@ -47,6 +47,14 @@ const initHandwriting = function (Reveal) {
     let penStyleLock = false;
     let penSession = false;
 
+    // Multiplex / Socket Variables
+    let socket = null;
+    let multiplexConfig = null;
+    let isMaster = false;
+    let multiplexId = null;
+    let multiplexSecret = null;
+    let multiplexUrl = null;
+
     let currentPathElement = null;
     let currentPoints = [];
     let currentSlideGroup = null;
@@ -82,6 +90,98 @@ const initHandwriting = function (Reveal) {
     const FULLSCREEN_ICON = `<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
     const SAVE_ICON = `<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H5V5h10v4z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
+
+    // --- Multiplex Helper Functions ---
+    const generateUUID = () => {
+        return 'stroke-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now();
+    };
+
+    const initMultiplex = () => {
+        multiplexConfig = Reveal.getConfig().multiplex;
+        if (!multiplexConfig) return;
+
+        multiplexId = multiplexConfig.id;
+        multiplexSecret = multiplexConfig.secret;
+        multiplexUrl = multiplexConfig.url;
+        isMaster = !!multiplexSecret; // If we have a secret, we are the presenter
+
+        // Connect if io is available (usually loaded by multiplex plugin)
+        if (typeof io !== 'undefined' && multiplexUrl) {
+            socket = io.connect(multiplexUrl);
+
+            if (!isMaster) {
+                // We are client/audience: Listen for events
+                console.log("Reveal Notes: Connected as Audience");
+                socket.on(multiplexId, function (data) {
+                    // CHANGED: Update app ID to match emitEvent
+                    if (data.app === 'reveal-handwriting-plugin') {
+                        handleRemoteEvent(data);
+                    }
+                });
+            } else {
+                console.log("Reveal Notes: Connected as Master");
+            }
+        }
+    };
+
+    const emitEvent = (action, payload) => {
+        if (socket && isMaster && multiplexId && multiplexSecret) {
+            const data = {
+                // CHANGED: Use a unique app ID to avoid confusion
+                app: 'reveal-handwriting-plugin',
+                secret: multiplexSecret,
+                socketId: multiplexId,
+                action: action,
+                payload: payload
+            };
+            socket.emit('multiplex:state', data);
+        }
+    };
+
+    const handleRemoteEvent = (data) => {
+        const { action, payload } = data;
+        const targetSlideGroup = svg.querySelector(`g[id="${payload.slideId}"]`);
+
+        if (!targetSlideGroup) return;
+
+        if (action === 'draw') {
+            const { id, d, color, width, type, opacity, blendMode } = payload;
+
+            if (targetSlideGroup.querySelector(`[data-id="${id}"]`)) return;
+
+            let el;
+            if (type === 'dot') {
+                el = document.createElementNS(SVG_NS, "circle");
+                el.setAttribute("cx", d.cx);
+                el.setAttribute("cy", d.cy);
+                el.setAttribute("r", width / 2);
+                el.setAttribute("fill", color);
+                if (opacity) el.setAttribute("fill-opacity", opacity);
+            } else {
+                el = document.createElementNS(SVG_NS, "path");
+                el.setAttribute("d", d);
+                el.setAttribute("stroke", color);
+                el.setAttribute("stroke-width", width);
+                el.setAttribute("fill", "none");
+                el.setAttribute("stroke-linecap", "round");
+                el.setAttribute("stroke-linejoin", "round");
+                if (opacity) el.setAttribute("stroke-opacity", opacity);
+            }
+
+            el.setAttribute("data-id", id);
+            el.style.pointerEvents = "all";
+            if (blendMode) el.style.mixBlendMode = blendMode;
+
+            const layerClass = (type === 'marker') ? '.marker-strokes' : '.pen-strokes';
+            const layer = targetSlideGroup.querySelector(layerClass);
+            if (layer) layer.appendChild(el);
+
+        } else if (action === 'erase') {
+            const el = targetSlideGroup.querySelector(`[data-id="${payload.id}"]`);
+            if (el) el.remove();
+        }
+    };
+    // ----------------------------------
 
     const getToolIcon = (tool) => {
         switch (tool) {
@@ -135,6 +235,7 @@ const initHandwriting = function (Reveal) {
 
         injectNotesUIStyles();
 
+        initMultiplex();
 
         const revealContainer = document.querySelector('.reveal');
         if (revealContainer) {
@@ -190,19 +291,18 @@ const initHandwriting = function (Reveal) {
             svg.appendChild(group);
         }
 
-        // Ensure marker and pen sub-groups exist for layering
         let markerStrokes = group.querySelector('.marker-strokes');
         if (!markerStrokes) {
             markerStrokes = document.createElementNS(SVG_NS, "g");
             markerStrokes.setAttribute("class", "marker-strokes");
-            group.appendChild(markerStrokes); // Append marker group first (bottom layer)
+            group.appendChild(markerStrokes);
         }
 
         let penStrokes = group.querySelector('.pen-strokes');
         if (!penStrokes) {
             penStrokes = document.createElementNS(SVG_NS, "g");
             penStrokes.setAttribute("class", "pen-strokes");
-            group.appendChild(penStrokes); // Append pen group second (top layer)
+            group.appendChild(penStrokes);
         }
 
 
@@ -328,6 +428,15 @@ const initHandwriting = function (Reveal) {
         const element = document.elementFromPoint(x, y);
         if (element && (element.tagName === 'path' || element.tagName === 'circle') && element.closest('.slide-drawing') === currentSlideGroup) {
             if (element.getAttribute('id') === 'current-lasso') return;
+
+            const uuid = element.getAttribute("data-id");
+            if (isMaster && uuid) {
+                emitEvent('erase', {
+                    slideId: currentSlideGroup.getAttribute('id'),
+                    id: uuid
+                });
+            }
+
             element.remove();
         }
     }
@@ -523,6 +632,8 @@ const initHandwriting = function (Reveal) {
                 currentPoints.push(startPoint);
 
                 currentPathElement = document.createElementNS(SVG_NS, "path");
+                currentPathElement.setAttribute("data-id", generateUUID());
+
                 currentPathElement.style.pointerEvents = "all";
                 currentPathElement.setAttribute("stroke", currentColor);
                 currentPathElement.setAttribute("fill", "none");
@@ -719,6 +830,7 @@ const initHandwriting = function (Reveal) {
                 if (currentPathElement && currentPoints.length === 1) {
                     const point = currentPoints[0];
                     const width = strokeWidths[currentTool] || 3;
+                    const uuid = currentPathElement.getAttribute("data-id");
 
                     currentPathElement.remove();
 
@@ -727,6 +839,7 @@ const initHandwriting = function (Reveal) {
                     dot.setAttribute("cy", point.y);
                     dot.setAttribute("r", width / 2);
                     dot.setAttribute("fill", currentColor);
+                    dot.setAttribute("data-id", uuid);
                     dot.style.pointerEvents = "all";
 
                     if (currentTool === 'marker') {
@@ -740,10 +853,37 @@ const initHandwriting = function (Reveal) {
                         currentSlideGroup.querySelector('.pen-strokes').appendChild(dot);
                     }
 
+                    if (isMaster) {
+                        emitEvent('draw', {
+                            slideId: currentSlideGroup.getAttribute('id'),
+                            id: uuid,
+                            d: { cx: point.x, cy: point.y },
+                            type: 'dot',
+                            color: currentColor,
+                            width: width,
+                            opacity: (currentTool === 'marker' ? "0.6" : null),
+                            blendMode: (currentTool === 'marker' ? "multiply" : null)
+                        });
+                    }
+
                 } else if (currentPathElement && currentPoints.length > 1) {
                     const last = currentPoints[currentPoints.length - 1];
                     const existingD = currentPathElement.getAttribute("d");
                     currentPathElement.setAttribute("d", existingD + ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`);
+
+                    if (isMaster) {
+                        const uuid = currentPathElement.getAttribute("data-id");
+                        emitEvent('draw', {
+                            slideId: currentSlideGroup.getAttribute('id'),
+                            id: uuid,
+                            d: currentPathElement.getAttribute("d"),
+                            type: currentTool,
+                            color: currentPathElement.getAttribute("stroke"),
+                            width: currentPathElement.getAttribute("stroke-width"),
+                            opacity: currentPathElement.getAttribute("stroke-opacity"),
+                            blendMode: currentPathElement.style.mixBlendMode
+                        });
+                    }
                 }
                 currentPathElement = null;
             }
@@ -821,7 +961,6 @@ const initHandwriting = function (Reveal) {
             }
 
 
-            // Inline CSS backgrounds
             const styleElements = docClone.querySelectorAll('style');
             for (const style of styleElements) {
                 let css = style.textContent;
@@ -1224,7 +1363,16 @@ fill: black;
         deleteBtn.title = 'Delete Selection';
         deleteBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
         deleteBtn.onclick = () => {
-            selectedElements.forEach(el => el.remove());
+            selectedElements.forEach(el => {
+                const uuid = el.getAttribute("data-id");
+                if (isMaster && uuid) {
+                    emitEvent('erase', {
+                        slideId: currentSlideGroup.getAttribute('id'),
+                        id: uuid
+                    });
+                }
+                el.remove();
+            });
             const lassoEl = document.getElementById('current-lasso');
             if (lassoEl) lassoEl.remove();
             clearSelection();
