@@ -1,32 +1,32 @@
 /*****************************************************************
- ** Author: Felix Boy, felixboy.mail@gmail.com
- **
- ** A plugin for reveal.js adding a handwriting canvas.
- **
- ** Version: 1.0.0
- **
- ** License: MIT license 
- **
- ** Copyright (c) 2026 Felix Boy
- **
- ** Permission is hereby granted, free of charge, to any person obtaining a copy
- ** of this software and associated documentation files (the "Software"), to deal
- ** in the Software without restriction, including without limitation the rights
- ** to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- ** copies of the Software, and to permit persons to whom the Software is
- ** furnished to do so, subject to the following conditions:
- 
- ** The above copyright notice and this permission notice shall be included in all
- ** copies or substantial portions of the Software.
- 
- ** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- ** IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- ** FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- ** AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- ** LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- ** SOFTWARE.
- 
+** Author: Felix Boy, felixboy.mail@gmail.com
+**
+** A plugin for reveal.js adding a handwriting canvas.
+**
+** Version: 1.1.0
+**
+** License: MIT license
+**
+** Copyright (c) 2026 Felix Boy
+**
+** Permission is hereby granted, free of charge, to any person obtaining a copy
+** of this software and associated documentation files (the "Software"), to deal
+** in the Software without restriction, including without limitation the rights
+** to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+** copies of the Software, and to permit persons to whom the Software is
+** furnished to do so, subject to the following conditions:
+
+** The above copyright notice and this permission notice shall be included in all
+** copies or substantial portions of the Software.
+
+** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+** IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+** FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+** AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+** LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+** SOFTWARE.
+
 *******************************************************************/
 
 window.revealHandwriting = window.revealHandwriting || {
@@ -49,6 +49,9 @@ const initHandwriting = function (Reveal) {
 
     let currentPathElement = null;
     let currentPoints = [];
+    let pendingPoints = [];
+
+
     let currentSlideGroup = null;
     let lassoPoints = [];
     let selectedElements = [];
@@ -68,20 +71,37 @@ const initHandwriting = function (Reveal) {
     let tooltipTimeout;
 
     const PEN_ICON_SVG = `<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
-    const MARKER_ICON_SVG = `<svg fill="#000000" viewBox="0 0 512 512"><g><g><polygon points="57.832,391.052 0,448.885 85.151,504.67 128.3,461.521"/></g></g><g><g><path d="M497.972,113.851l-92.47-92.47c-9.06-9.061-21.107-14.051-33.921-14.051c-12.813,0-24.861,4.99-33.922,14.051
-                            L141.153,217.886l160.314,160.313l196.507-196.505C516.676,162.989,516.676,132.554,497.972,113.851z"/></g></g><g><g><path d="M119.691,239.347L61.56,297.479l21.069,21.069l-25.993,25.993c-0.401,0.401-0.787,0.811-1.163,1.228l118.112,118.112
-                            c0.418-0.376,0.828-0.764,1.228-1.163l25.993-25.992l21.068,21.068l58.132-58.132L119.691,239.347z"/></g></g></svg>`;
-    const ERASER_ICON_SVG = `<svg fill="#000000" viewBox="0 0 512 512"><g><g><path d="M495.276,133.96L377.032,15.715c-19.605-19.608-51.34-19.609-70.946,0L40.37,281.428
-                            c-19.557,19.56-19.557,51.386,0.001,70.946l61.153,61.153c9.475,9.476,22.074,14.693,35.473,14.693h114.188
-                            c13.4,0,25.998-5.219,35.473-14.693l25.678-25.678v-0.001l182.941-182.942C514.837,185.347,514.837,153.52,495.276,133.96z
-                            M263.009,389.878c-3.158,3.158-7.358,4.897-11.824,4.897H136.997c-4.467,0-8.666-1.739-11.824-4.897l-61.152-61.152
-                            c-6.521-6.521-6.521-17.129-0.001-23.65l70.948-70.948l141.895,141.895L263.009,389.878z M471.629,181.258l-32.113,32.113
-                            L297.622,71.475l32.113-32.113c6.522-6.521,17.129-6.519,23.65,0l118.244,118.245 C478.148,164.128,478.148,174.737,471.629,181.258z"/></g></g><g><g><path d="M495.278,477.546H16.722C7.487,477.546,0,485.034,0,494.269s7.487,16.722,16.722,16.722h478.555
-                            c9.235,0,16.722-7.487,16.722-16.722S504.513,477.546,495.278,477.546z"/></g></g></svg>`;
+    const MARKER_ICON_SVG = `<svg fill="#000000" viewBox="0 0 512 512"><g><g><polygon points="57.832,391.052 0,448.885 85.151,504.67 128.3,461.521"/></g></g><g><g><path d="M497.972,113.851l-92.47-92.47c-9.06-9.061-21.107-14.051-33.921-14.051c-12.813,0-24.861,4.99-33.922,14.051 L141.153,217.886l160.314,160.313l196.507-196.505C516.676,162.989,516.676,132.554,497.972,113.851z"/></g></g><g><g><path d="M119.691,239.347L61.56,297.479l21.069,21.069l-25.993,25.993c-0.401,0.401-0.787,0.811-1.163,1.228l118.112,118.112 c0.418-0.376,0.828-0.764,1.228-1.163l25.993-25.992l21.068,21.068l58.132-58.132L119.691,239.347z"/></g></g></svg>`;
+    const ERASER_ICON_SVG = `<svg fill="#000000" viewBox="0 0 512 512"><g><g><path d="M495.276,133.96L377.032,15.715c-19.605-19.608-51.34-19.609-70.946,0L40.37,281.428 c-19.557,19.56-19.557,51.386,0.001,70.946l61.153,61.153c9.475,9.476,22.074,14.693,35.473,14.693h114.188 c13.4,0,25.998-5.219,35.473-14.693l25.678-25.678v-0.001l182.941-182.942C514.837,185.347,514.837,153.52,495.276,133.96z M263.009,389.878c-3.158,3.158-7.358,4.897-11.824,4.897H136.997c-4.467,0-8.666-1.739-11.824-4.897l-61.152-61.152 c-6.521-6.521-6.521-17.129-0.001-23.65l70.948-70.948l141.895,141.895L263.009,389.878z M471.629,181.258l-32.113,32.113 L297.622,71.475l32.113-32.113c6.522-6.521,17.129-6.519,23.65,0l118.244,118.245 C478.148,164.128,478.148,174.737,471.629,181.258z"/></g></g><g><g><path d="M495.278,477.546H16.722C7.487,477.546,0,485.034,0,494.269s7.487,16.722,16.722,16.722h478.555 c9.235,0,16.722-7.487,16.722-16.722S504.513,477.546,495.278,477.546z"/></g></g></svg>`;
     const LASSO_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.00001 10C5.00001 8.75523 5.7133 7.52938 7.06628 6.57433C8.41665 5.62113 10.3346 5 12.5 5C14.6654 5 16.5834 5.62113 17.9337 6.57433C19.2867 7.52938 20 8.75523 20 10C20 11.2448 19.2867 12.4706 17.9337 13.4257C16.5834 14.3789 14.6654 15 12.5 15C11.9849 15 11.4828 14.9648 10.9982 14.898C10.934 13.1045 9.18159 12 7.50001 12C6.92753 12 6.37589 12.1176 5.88506 12.3351C5.30127 11.6111 5.00001 10.8126 5.00001 10ZM12.5 17C11.7421 17 11.0036 16.9352 10.2949 16.8124C10.2111 16.9074 10.1215 16.9971 10.027 17.0814C10.0324 17.1351 10.0364 17.1937 10.0381 17.2566C10.0459 17.5458 10.0053 17.9424 9.80913 18.3641C9.38923 19.2667 8.42683 19.9562 6.7537 20.2187C4.68005 20.544 4.14608 21.1521 4.01748 21.3745C3.95033 21.4906 3.94254 21.5823 3.94406 21.6357C3.94468 21.6576 3.94702 21.6739 3.94861 21.6827C3.96296 21.7256 3.97448 21.7699 3.98295 21.8152C4.03316 22.0804 3.97228 22.3491 3.826 22.5638C3.74444 22.6836 3.63632 22.7865 3.50609 22.8627C3.40769 22.9205 3.29851 22.962 3.1823 22.9834C3.06521 23.0053 2.94748 23.0055 2.83406 22.9863C2.687 22.9617 2.55081 22.9051 2.43293 22.8238C2.31589 22.7434 2.21506 22.6375 2.13982 22.5103C2.1012 22.4453 2.06973 22.3756 2.0465 22.3023C2.04333 22.2927 2.04 22.2823 2.03655 22.2711C2.02484 22.2331 2.01167 22.1856 1.99902 22.1296C1.97383 22.0181 1.94991 21.8695 1.94487 21.6927C1.93466 21.3347 2.00276 20.8633 2.28609 20.3733C2.85846 19.3834 4.12384 18.6068 6.4437 18.2429C6.8529 18.1787 7.15489 18.0908 7.37778 17.9981C5.70287 17.9451 4.00001 16.8095 4.00001 15C4.00001 14.4998 4.14018 14.0417 4.37329 13.6452C3.52173 12.6101 3.00001 11.3665 3.00001 10C3.00001 7.93106 4.18951 6.15691 5.91292 4.94039C7.63895 3.72202 9.97098 3 12.5 3C15.029 3 17.3611 3.72202 19.0871 4.94039C20.8105 6.15691 22 7.93106 22 10C22 12.0689 20.8105 13.8431 19.0871 15.0596C17.3611 16.278 15.029 17 12.5 17ZM6.34227 14.3786C6.60474 14.1624 7.01132 14 7.50001 14C8.5482 14 9.00001 14.6444 9.00001 15C9.00001 15.0929 8.97952 15.185 8.9364 15.2772C8.85616 15.4487 8.687 15.6381 8.41217 15.7841C8.16534 15.9153 7.85219 16 7.50001 16C6.45182 16 6.00001 15.3556 6.00001 15C6.00001 14.8092 6.09212 14.5846 6.34227 14.3786Z" fill="#000000"/></svg>`;
     const FULLSCREEN_ICON = `<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
     const SAVE_ICON = `<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H5V5h10v4z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
+
+
+    const drawLoop = () => {
+        if (!isDrawing) return;
+
+        if (pendingPoints.length > 0) {
+            let pathData = currentPathElement.getAttribute('d');
+
+            pendingPoints.forEach(p => {
+                currentPoints.push(p);
+                if (currentPoints.length > 1) {
+                    const P1 = currentPoints[currentPoints.length - 2];
+                    const P2 = currentPoints[currentPoints.length - 1];
+                    const midX = (P1.x + P2.x) / 2;
+                    const midY = (P1.y + P2.y) / 2;
+                    pathData += " Q " + P1.x.toFixed(2) + "," + P1.y.toFixed(2) + " " + midX.toFixed(2) + "," + midY.toFixed(2);
+                }
+            });
+
+            currentPathElement.setAttribute('d', pathData);
+            pendingPoints = [];
+        }
+
+        requestAnimationFrame(drawLoop);
+    };
 
     const getToolIcon = (tool) => {
         switch (tool) {
@@ -190,19 +210,19 @@ const initHandwriting = function (Reveal) {
             svg.appendChild(group);
         }
 
-        // Ensure marker and pen sub-groups exist for layering
+
         let markerStrokes = group.querySelector('.marker-strokes');
         if (!markerStrokes) {
             markerStrokes = document.createElementNS(SVG_NS, "g");
             markerStrokes.setAttribute("class", "marker-strokes");
-            group.appendChild(markerStrokes); // Append marker group first (bottom layer)
+            group.appendChild(markerStrokes);
         }
 
         let penStrokes = group.querySelector('.pen-strokes');
         if (!penStrokes) {
             penStrokes = document.createElementNS(SVG_NS, "g");
             penStrokes.setAttribute("class", "pen-strokes");
-            group.appendChild(penStrokes); // Append pen group second (top layer)
+            group.appendChild(penStrokes);
         }
 
 
@@ -247,7 +267,6 @@ const initHandwriting = function (Reveal) {
         if (svg) svg.style.cursor = "default";
     }
 
-
     function setTool(toolName) {
         currentTool = toolName;
 
@@ -271,27 +290,7 @@ const initHandwriting = function (Reveal) {
         return Math.hypot(p2.x - p1.x, p2.y - p1.y);
     }
 
-    function createPathData(points) {
-        if (!points || points.length === 0) return "";
-        let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
-        if (points.length < 2) return d;
-        if (points.length === 2) {
-            d += " L " + points[1].x.toFixed(2) + " " + points[1].y.toFixed(2);
-        } else {
-            let P0 = points[0];
-            let P1 = points[1];
-            d += " L " + P1.x.toFixed(2) + " " + P1.y.toFixed(2);
-            for (let i = 1; i < points.length - 1; i++) {
-                const P2 = points[i + 1];
-                const midX2 = (P1.x + P2.x) / 2;
-                const midY2 = (P1.y + P2.y) / 2;
-                d += " Q " + P1.x.toFixed(2) + "," + P1.y.toFixed(2) + " " + midX2.toFixed(2) + "," + midY2.toFixed(2);
-                P0 = P1;
-                P1 = P2;
-            }
-        }
-        return d;
-    }
+
 
     function isPointInPolygon(point, vs) {
         let x = point.x, y = point.y;
@@ -388,7 +387,6 @@ const initHandwriting = function (Reveal) {
         return false;
     }
 
-
     function clearSelection() {
         svg.style.pointerEvents = "none";
 
@@ -440,18 +438,146 @@ const initHandwriting = function (Reveal) {
         });
     }
 
+
+    function smoothMovingAverage(points, win = 3) {
+        if (points.length <= 2 || win < 3 || win % 2 === 0) return points.slice();
+        const half = (win - 1) / 2;
+        const out = [];
+        for (let i = 0; i < points.length; i++) {
+            let sx = 0, sy = 0, cnt = 0;
+            for (let k = -half; k <= half; k++) {
+                const idx = Math.min(points.length - 1, Math.max(0, i + k));
+                sx += points[idx].x; sy += points[idx].y; cnt++;
+            }
+            out.push({ x: sx / cnt, y: sy / cnt });
+        }
+        return out;
+    }
+
+    /**
+     * Perpendicular distance from point P to line segment AB.
+     */
+    function pointLineDist(p, a, b) {
+        const vx = b.x - a.x, vy = b.y - a.y;
+        const wx = p.x - a.x, wy = p.y - a.y;
+        const c1 = vx * wx + vy * wy;
+        if (c1 <= 0) return Math.hypot(wx, wy);
+        const c2 = vx * vx + vy * vy;
+        if (c2 <= c1) return Math.hypot(p.x - b.x, p.y - b.y);
+        const t = c1 / c2;
+        const px = a.x + t * vx, py = a.y + t * vy;
+        return Math.hypot(p.x - px, p.y - py);
+    }
+
+    /**
+     * Ramer–Douglas–Peucker polyline simplification.
+     * epsilon controls how aggressively to simplify.
+     */
+    function rdpSimplify(points, epsilon) {
+        if (points.length < 3) return points.slice();
+
+        let dmax = 0, index = 0;
+        const end = points.length - 1;
+        for (let i = 1; i < end; i++) {
+            const d = pointLineDist(points[i], points[0], points[end]);
+            if (d > dmax) { index = i; dmax = d; }
+        }
+
+        if (dmax > epsilon) {
+            const rec1 = rdpSimplify(points.slice(0, index + 1), epsilon);
+            const rec2 = rdpSimplify(points.slice(index), epsilon);
+            return rec1.slice(0, -1).concat(rec2);
+        } else {
+            return [points[0], points[end]];
+        }
+    }
+
+    /**
+     * Build a smooth cubic Bezier path from points using a Cardinal (Catmull-Rom-like) spline.
+     * tension in [0,1]: 0 = Catmull-Rom (curviest), 1 = straight lines (no curvature).
+     * We use a common cubic conversion:
+     *   B0 = P1
+     *   B1 = P1 + (P2 - P0) * (1 - tension) / 6
+     *   B2 = P2 - (P3 - P1) * (1 - tension) / 6
+     *   B3 = P2
+     */
+    function buildCardinalBezierPath(points, tension = 0.2) {
+        const n = points.length;
+        if (n === 0) return '';
+        if (n === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+        if (n === 2) {
+            const p0 = points[0], p1 = points[1];
+            return `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
+        }
+
+        const k = (1 - tension) / 6;
+        let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+
+        for (let i = 0; i < n - 1; i++) {
+            const p0 = i === 0 ? points[0] : points[i - 1];
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            const p3 = i + 2 < n ? points[i + 2] : points[n - 1];
+
+            const c1x = p1.x + (p2.x - p0.x) * k;
+            const c1y = p1.y + (p2.y - p0.y) * k;
+            const c2x = p2.x - (p3.x - p1.x) * k;
+            const c2y = p2.y - (p3.y - p1.y) * k;
+
+            d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+        }
+
+        return d;
+    }
+
+
+    function smoothStroke(points, strokeWidth, options = {}) {
+        const {
+            movingAvgWindow = 3,   // 3 or 5 works well
+            epsilonFactor = 0.35,  // RDP epsilon = factor * strokeWidth
+            tension = 0.2          // 0..1 (0 = curvy, 0.2–0.4 good handwriting)
+        } = options;
+
+        if (!points || points.length < 3) {
+            if (!points || points.length === 0) return '';
+            if (points.length === 1) {
+                const p = points[0];
+                return `M ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+            }
+            return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`;
+        }
+
+        let pts = points.slice();
+
+        if (movingAvgWindow >= 3) {
+            pts = smoothMovingAverage(pts, movingAvgWindow);
+        }
+
+        const epsilon = Math.max(0.5, (strokeWidth || 3) * epsilonFactor);
+        pts = rdpSimplify(pts, epsilon);
+
+        return buildCardinalBezierPath(pts, tension);
+    }
+
+
     function setupPenEvents() {
         window.addEventListener('contextmenu', (e) => {
             if (e.pointerType === 'pen') e.preventDefault();
         });
 
         window.addEventListener('pointerdown', (e) => {
+            const menu = document.getElementById('notes-tool-menu');
+            if (menu && menu.classList.contains('active')) {
+                if (!e.target.closest('#notes-tool-menu') && !e.target.closest('#notes-tool-container')) {
+                    menu.classList.remove('active');
+                }
+            }
+
             if (e.pointerType !== 'pen') {
                 svg.style.pointerEvents = "none";
                 return;
             }
             beginPenSession(e);
-
 
             if (
                 e.target.closest('#notes-tool-container') ||
@@ -459,25 +585,14 @@ const initHandwriting = function (Reveal) {
                 e.target.closest('#notes-tool-menu')
             ) return;
 
-            if (!e.target.closest('#notes-tool-menu') && document.getElementById('notes-tool-menu')) {
-                document.getElementById('notes-tool-menu').classList.remove('active');
-            }
-
-
-            if (e.pointerType === 'pen') {
-                absorbPenEvents(e);
-                svg.style.pointerEvents = "all";
-            }
-
-            e.preventDefault();
+            absorbPenEvents(e);
+            svg.style.pointerEvents = "all";
 
             const svgPoint = getPointInSvg(e.clientX, e.clientY);
 
             if (isMovingSelection) {
-                e.stopPropagation();
                 isDraggingSelection = true;
                 dragStartPos = { x: svgPoint.x, y: svgPoint.y };
-                svg.style.pointerEvents = "all";
                 svg.setPointerCapture(e.pointerId);
                 return;
             }
@@ -487,20 +602,16 @@ const initHandwriting = function (Reveal) {
             isLassoing = false;
 
             const isEraserButton = (e.buttons & 32);
-            const isLassoButton = (e.buttons & 2);
+            const isLassoButton = e.altKey;
 
             if (currentTool === 'eraser' || isEraserButton) {
                 isErasing = true;
                 clearSelection();
                 eraseAt(e.clientX, e.clientY);
-                e.stopPropagation();
-            }
-            else if (currentTool === 'lasso' || isLassoButton) {
+            } else if (currentTool === 'lasso' || isLassoButton) {
                 isLassoing = true;
                 clearSelection();
-                lassoPoints = [];
-                lassoPoints.push({ x: svgPoint.x, y: svgPoint.y });
-
+                lassoPoints = [svgPoint];
                 showTooltipIcon(e.clientX, e.clientY, LASSO_ICON_SVG, 200);
 
                 currentPathElement = document.createElementNS(SVG_NS, "path");
@@ -511,16 +622,12 @@ const initHandwriting = function (Reveal) {
                 currentPathElement.setAttribute("fill", "rgba(0,0,0,0.05)");
                 currentPathElement.setAttribute("d", `M ${svgPoint.x} ${svgPoint.y}`);
                 svg.appendChild(currentPathElement);
-
-                e.stopPropagation();
-            }
-            else {
+            } else {
                 clearSelection();
-
                 isDrawing = true;
-                currentPoints = [];
-                const startPoint = { x: svgPoint.x, y: svgPoint.y };
-                currentPoints.push(startPoint);
+
+                currentPoints = [{ x: svgPoint.x, y: svgPoint.y }];
+                pendingPoints = [];
 
                 currentPathElement = document.createElementNS(SVG_NS, "path");
                 currentPathElement.style.pointerEvents = "all";
@@ -530,138 +637,66 @@ const initHandwriting = function (Reveal) {
                 currentPathElement.setAttribute("stroke-linejoin", "round");
 
                 let activeWidth = strokeWidths[currentTool] || 3;
-
+                currentPathElement.setAttribute("stroke-width", activeWidth);
                 if (currentTool === 'marker') {
-                    currentPathElement.setAttribute("stroke-width", activeWidth);
                     currentPathElement.setAttribute("stroke-opacity", "0.6");
                     currentPathElement.style.mixBlendMode = "multiply";
-                } else {
-                    currentPathElement.setAttribute("stroke-width", activeWidth);
                 }
 
-                currentPathElement.setAttribute("d", `M ${startPoint.x.toFixed(1)} ${startPoint.y.toFixed(1)}`);
+                currentPathElement.setAttribute("d", `M ${svgPoint.x.toFixed(1)} ${svgPoint.y.toFixed(1)}`);
 
-                if (currentTool === 'marker') {
-                    currentSlideGroup.querySelector('.marker-strokes').appendChild(currentPathElement);
-                } else {
-                    currentSlideGroup.querySelector('.pen-strokes').appendChild(currentPathElement);
-                }
+                const targetGroup = currentTool === 'marker' ?
+                    currentSlideGroup.querySelector('.marker-strokes') :
+                    currentSlideGroup.querySelector('.pen-strokes');
+                targetGroup.appendChild(currentPathElement);
 
-                e.stopPropagation();
+                requestAnimationFrame(drawLoop);
             }
         }, { passive: false });
 
-        window.addEventListener('pointerleave', (e) => {
-            if (e.pointerType === 'pen') {
-                hideTooltipIcon();
-            }
-        });
-
         window.addEventListener('pointermove', (e) => {
-            if (e.pointerType !== 'pen' || !penSession) return;
-            if (
-                e.target.closest('#notes-tool-container') ||
-                e.target.closest('#notes-delete-button-container') ||
-                e.target.closest('#notes-tool-menu')
-            ) return;
+            if (e.pointerType !== 'pen' || !penSession || e.buttons === 0 && !e.altKey) return;
+            if (e.target.closest('#notes-tool-container, #notes-delete-button-container, #notes-tool-menu')) return;
 
-
-            if (e.pointerType === 'pen') {
-                absorbPenEvents(e);
-                svg.style.pointerEvents = "all";
-            }
-
-
-            const isEraserButton = (e.buttons & 32);
-            const isLassoButton = (e.buttons & 2);
-            const isAnyPenButtonDown = isEraserButton || isLassoButton;
-
-            if (isAnyPenButtonDown && !wasPenButtonDown) {
-                if (isEraserButton) {
-                    showTooltipIcon(e.clientX, e.clientY, ERASER_ICON_SVG, 500);
-                } else if (isLassoButton) {
-                    showTooltipIcon(e.clientX, e.clientY, LASSO_ICON_SVG, 500);
-                }
-            }
-            wasPenButtonDown = isAnyPenButtonDown;
-
-            if (e.buttons === 0) {
-                isDrawing = isErasing = isLassoing = isDraggingSelection = false;
-                currentPathElement = null;
-                if (svg.hasPointerCapture(e.pointerId)) {
-                    try { svg.releasePointerCapture(e.pointerId); } catch (err) { }
-                }
-                return;
-            }
-
-            const svgPoint = getPointInSvg(e.clientX, e.clientY);
+            absorbPenEvents(e);
+            const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+            const lastEvent = events[events.length - 1];
 
             if (isDraggingSelection) {
-                e.preventDefault();
-                e.stopPropagation();
+                const svgPoint = getPointInSvg(lastEvent.clientX, lastEvent.clientY);
                 const dx = svgPoint.x - dragStartPos.x;
                 const dy = svgPoint.y - dragStartPos.y;
                 moveSelectedElements(dx, dy);
                 return;
             }
 
-            if (!isDrawing && !isErasing && !isLassoing && !isMovingSelection && !isDraggingSelection) {
-                if ((e.buttons & 32) || (e.buttons & 2)) isErasing = true;
-            }
-
             if (isErasing) {
-                e.preventDefault();
-                e.stopPropagation();
-                const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
                 events.forEach(ev => eraseAt(ev.clientX, ev.clientY));
                 return;
             }
 
             if (isLassoing && currentPathElement) {
-                e.preventDefault();
-                e.stopPropagation();
-                lassoPoints.push({ x: svgPoint.x, y: svgPoint.y });
+                const svgPoint = getPointInSvg(lastEvent.clientX, lastEvent.clientY);
+                lassoPoints.push(svgPoint);
                 const d = currentPathElement.getAttribute("d");
                 currentPathElement.setAttribute("d", d + ` L ${svgPoint.x} ${svgPoint.y}`);
                 return;
             }
 
-            if (isDrawing && currentPathElement) {
-                e.preventDefault();
-                e.stopPropagation();
-                const p = { x: svgPoint.x, y: svgPoint.y };
-
-                const last = currentPoints[currentPoints.length - 1];
-                if (getDistance(last, p) < 2) return;
-
-                currentPoints.push(p);
-
-                const pathData = createPathData(currentPoints);
-                if (pathData) {
-                    currentPathElement.setAttribute("d", pathData);
-                }
+            if (isDrawing) {
+                events.forEach(ev => {
+                    const svgPoint = getPointInSvg(ev.clientX, ev.clientY);
+                    pendingPoints.push({ x: svgPoint.x, y: svgPoint.y });
+                });
             }
         }, { passive: false });
 
         window.addEventListener('pointerup', (e) => {
-
             if (e.pointerType !== 'pen') return;
             endPenSession(e);
 
-            if (
-                e.target.closest('#notes-tool-container') ||
-                e.target.closest('#notes-delete-button-container') ||
-                e.target.closest('#notes-tool-menu')
-            ) return;
-
-
-            if (e.pointerType !== 'pen') return;
-
-            if (e.pointerType === 'pen') {
-                absorbPenEvents(e);
-                svg.style.pointerEvents = "all";
-            }
-
+            if (e.target.closest('#notes-tool-container, #notes-delete-button-container, #notes-tool-menu')) return;
+            absorbPenEvents(e);
 
             if (svg.hasPointerCapture(e.pointerId)) {
                 svg.releasePointerCapture(e.pointerId);
@@ -670,7 +705,6 @@ const initHandwriting = function (Reveal) {
             const svgPoint = getPointInSvg(e.clientX, e.clientY);
 
             if (isDraggingSelection) {
-                e.stopPropagation();
                 isDraggingSelection = false;
                 selectionTransform.x += (svgPoint.x - dragStartPos.x);
                 selectionTransform.y += (svgPoint.y - dragStartPos.y);
@@ -680,23 +714,18 @@ const initHandwriting = function (Reveal) {
             }
 
             if (isLassoing) {
-                e.stopPropagation();
                 isLassoing = false;
                 if (currentPathElement) {
-                    const d = currentPathElement.getAttribute("d");
-                    currentPathElement.setAttribute("d", d + " Z");
+                    currentPathElement.setAttribute("d", currentPathElement.getAttribute("d") + " Z");
                 }
-
                 performLassoSelection();
-
                 if (selectedElements.length > 0) {
                     isMovingSelection = true;
                     selectedElements.forEach(el => el.style.stroke = "#22c55e");
                     svg.style.pointerEvents = "all";
                     document.getElementById('notes-delete-button-container').style.display = 'flex';
                 } else {
-                    const lassoEl = document.getElementById('current-lasso');
-                    if (lassoEl) lassoEl.remove();
+                    document.getElementById('current-lasso')?.remove();
                 }
                 currentPathElement = null;
                 return;
@@ -708,18 +737,16 @@ const initHandwriting = function (Reveal) {
         window.addEventListener('pointercancel', (e) => {
             if (e.pointerType !== 'pen') return;
             endPenSession(e);
-            if (e.pointerType === 'pen') endStroke();
+            endStroke();
         });
 
         function endStroke() {
-            isErasing = false;
             if (isDrawing) {
                 isDrawing = false;
 
-                if (currentPathElement && currentPoints.length === 1) {
+                if (currentPathElement && currentPoints.length === 1 && pendingPoints.length === 0) {
                     const point = currentPoints[0];
                     const width = strokeWidths[currentTool] || 3;
-
                     currentPathElement.remove();
 
                     const dot = document.createElementNS(SVG_NS, "circle");
@@ -732,21 +759,34 @@ const initHandwriting = function (Reveal) {
                     if (currentTool === 'marker') {
                         dot.setAttribute("fill-opacity", "0.6");
                         dot.style.mixBlendMode = "multiply";
-                    }
-
-                    if (currentTool === 'marker') {
                         currentSlideGroup.querySelector('.marker-strokes').appendChild(dot);
                     } else {
                         currentSlideGroup.querySelector('.pen-strokes').appendChild(dot);
                     }
-
-                } else if (currentPathElement && currentPoints.length > 1) {
-                    const last = currentPoints[currentPoints.length - 1];
-                    const existingD = currentPathElement.getAttribute("d");
-                    currentPathElement.setAttribute("d", existingD + ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`);
                 }
+                else if (currentPathElement) {
+                    const allPoints = currentPoints.concat(pendingPoints);
+                    pendingPoints = [];
+
+                    // Build a smooth cubic Bezier path based on the collected points
+                    const activeWidth = strokeWidths[currentTool] || 3;
+                    const smoothedD = smoothStroke(allPoints, activeWidth, {
+                        movingAvgWindow: 3,    // try 5 if you want more denoise
+                        epsilonFactor: 0.35,   // 0.25..0.45; higher = simpler/smoother
+                        tension: 0.2           // 0..1; 0.2–0.4 keeps a “handwritten” feel
+                    });
+
+                    if (smoothedD && smoothedD.length > 0) {
+                        currentPathElement.setAttribute('d', smoothedD);
+                        currentPathElement.setAttribute('shape-rendering', 'geometricPrecision');
+                    }
+                }
+
+                pendingPoints = [];
+                currentPoints = [];
                 currentPathElement = null;
             }
+            isErasing = false;
         }
     }
 
@@ -902,6 +942,7 @@ const initHandwriting = function (Reveal) {
     function injectNotesUIStyles() {
         const style = document.createElement('style');
         style.innerHTML = `
+
 :root {
 --notes-button-size: 28px;
 --notes-icon-size: 16px;
@@ -911,7 +952,7 @@ const initHandwriting = function (Reveal) {
 }
 
 #notes-tool-container {
-position: fixed; 
+position: fixed;
 bottom: var(--notes-bottom);
 left: var(--notes-left);
 z-index: 1001;
@@ -927,9 +968,9 @@ transition: all 0.3s ease-in-out;
 }
 
 .print-pdf #notes-tool-container {
-  display: none !important;
+display: none !important;
 }
-  
+
 #notes-tool-container > *:not(:first-child) {
 opacity: 0;
 max-width: 0;
@@ -938,7 +979,7 @@ overflow: hidden;
 transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
 white-space: nowrap;
 }
- 
+
 #notes-tool-container:hover > *:not(:first-child) {
 opacity: 1;
 max-width: var(--notes-button-size);
@@ -952,15 +993,15 @@ background: #ced4da;
 transition: opacity 0.3s ease;
 }
 
-.notes-ui-button { 
-width: var(--notes-button-size); 
-height: var(--notes-button-size); 
-background: #f8f9fa; 
+.notes-ui-button {
+width: var(--notes-button-size);
+height: var(--notes-button-size);
+background: #f8f9fa;
 border: 1px solid #ced4da;
-border-radius: 50%; 
-cursor: pointer; 
-display: flex; 
-align-items: center; 
+border-radius: 50%;
+cursor: pointer;
+display: flex;
+align-items: center;
 justify-content: center;
 box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 transition: background-color 0.2s, transform 0.1s;
@@ -978,15 +1019,15 @@ fill: #ffffff;
 }
 
 #notes-tool-menu {
-display: none; 
-background: #fff; 
-border-radius: 8px; 
+display: none;
+background: #fff;
+border-radius: 8px;
 padding: 12px;
-position: fixed; 
+position: fixed;
 bottom: calc(var(--notes-bottom) + var(--notes-button-size) + 12px);
 left: var(--notes-left);
 width: 220px;
-box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 border: 1px solid #dee2e6;
 z-index: 1002;
 }
@@ -1030,7 +1071,7 @@ bottom: 10px;
 left: 50%;
 transform: translateX(-50%);
 z-index: 1001;
-display: none; 
+display: none;
 }
 #notes-delete-button {
 width: 36px; height: 36px;
@@ -1047,7 +1088,7 @@ width: 28px;
 height: 28px;
 background: transparent;
 border-radius: 50%;
-display: none; 
+display: none;
 align-items: center;
 justify-content: center;
 pointer-events: none;
@@ -1114,8 +1155,6 @@ fill: black;
                     if (currentSelected) currentSelected.classList.remove('selected');
                 }
                 swatch.classList.add('selected');
-
-                // Close menu after color is picked
                 menu.classList.remove('active');
             }
         });
@@ -1166,18 +1205,15 @@ fill: black;
                 hideTooltipIcon();
                 if (id !== 'lasso') clearSelection();
 
-                // Only open menu if the tool is already selected
                 if (currentTool === id) {
                     if (id === 'pen' || id === 'marker') {
                         menu.classList.toggle('active');
                     }
                 } else {
-                    // Switching to a new tool
                     menu.classList.remove('active');
                     setTool(id);
                 }
 
-                // Update slider logic even if menu is closed, so it's ready when opened
                 const slider = document.getElementById('notes-stroke-width-slider');
                 const label = document.getElementById('stroke-width-value');
                 if (slider && label && (id === 'pen' || id === 'marker')) {
@@ -1241,4 +1277,5 @@ fill: black;
         swallowUIEvents(container);
         swallowUIEvents(deleteBtnContainer);
     }
+
 };
