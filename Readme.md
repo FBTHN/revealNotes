@@ -1,6 +1,6 @@
-# RevealNotes Extension For Quarto
+# Reveal Handwriting Extension For Quarto
 
-Extension to provide a reveal.js plugin for handwriting notes directly on the slides with pen in different colors,
+Extension to provide a reveal.js plugin for handwriting directly on the slides with pen in different colors,
 marker, eraser and lasso select function. Writing works with pen only, tested on windows and android (not yet on ipad or mac)
 
 ## Installing

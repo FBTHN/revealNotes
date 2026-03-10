@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.1.0
+** Version: 1.1.1
 **
 ** License: MIT license
 **
@@ -51,6 +51,8 @@ const initHandwriting = function (Reveal) {
     let currentPoints = [];
     let pendingPoints = [];
 
+    let cachedPathData = "";
+    let lastProcessedIndex = 0;
 
     let currentSlideGroup = null;
     let lassoPoints = [];
@@ -80,28 +82,149 @@ const initHandwriting = function (Reveal) {
 
 
     const drawLoop = () => {
-        if (!isDrawing) return;
+        if (!isDrawing || !currentPathElement) return;
 
         if (pendingPoints.length > 0) {
-            let pathData = currentPathElement.getAttribute('d');
 
-            pendingPoints.forEach(p => {
-                currentPoints.push(p);
-                if (currentPoints.length > 1) {
-                    const P1 = currentPoints[currentPoints.length - 2];
-                    const P2 = currentPoints[currentPoints.length - 1];
-                    const midX = (P1.x + P2.x) / 2;
-                    const midY = (P1.y + P2.y) / 2;
-                    pathData += " Q " + P1.x.toFixed(2) + "," + P1.y.toFixed(2) + " " + midX.toFixed(2) + "," + midY.toFixed(2);
+            for (let i = 0; i < pendingPoints.length; i++) {
+                const p = pendingPoints[i];
+                const lastPoint = currentPoints[currentPoints.length - 1];
+
+                if (lastPoint) {
+                    const dx = p.x - lastPoint.x;
+                    const dy = p.y - lastPoint.y;
+
+                    if (dx * dx + dy * dy > 2) {
+                        currentPoints.push(p);
+                    }
+                } else {
+                    currentPoints.push(p);
                 }
-            });
-
-            currentPathElement.setAttribute('d', pathData);
+            }
             pendingPoints = [];
+
+
+            while (lastProcessedIndex < currentPoints.length - 2) {
+                const p1 = currentPoints[lastProcessedIndex + 1];
+                const p2 = currentPoints[lastProcessedIndex + 2];
+                const midX = (p1.x + p2.x) / 2;
+                const midY = (p1.y + p2.y) / 2;
+
+
+                cachedPathData += ` Q ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${midX.toFixed(1)} ${midY.toFixed(1)}`;
+                lastProcessedIndex++;
+            }
+
+
+            let dynamicTail = "";
+            const n = currentPoints.length;
+            if (n > 1) {
+                const lastP = currentPoints[n - 1];
+                dynamicTail = ` L ${lastP.x.toFixed(1)} ${lastP.y.toFixed(1)}`;
+            }
+
+            currentPathElement.setAttribute('d', cachedPathData + dynamicTail);
         }
 
         requestAnimationFrame(drawLoop);
     };
+
+
+    function smoothMovingAverage(points, win = 3) {
+        if (points.length <= 2 || win < 3 || win % 2 === 0) return points.slice();
+        const half = (win - 1) / 2;
+        const out = [];
+        for (let i = 0; i < points.length; i++) {
+            let sx = 0, sy = 0, cnt = 0;
+            for (let k = -half; k <= half; k++) {
+                const idx = Math.min(points.length - 1, Math.max(0, i + k));
+                sx += points[idx].x; sy += points[idx].y; cnt++;
+            }
+            out.push({ x: sx / cnt, y: sy / cnt });
+        }
+        return out;
+    }
+
+    function pointLineDist(p, a, b) {
+        const vx = b.x - a.x, vy = b.y - a.y;
+        const wx = p.x - a.x, wy = p.y - a.y;
+        const c1 = vx * wx + vy * wy;
+        if (c1 <= 0) return Math.hypot(wx, wy);
+        const c2 = vx * vx + vy * vy;
+        if (c2 <= c1) return Math.hypot(p.x - b.x, p.y - b.y);
+        const t = c1 / c2;
+        const px = a.x + t * vx, py = a.y + t * vy;
+        return Math.hypot(p.x - px, p.y - py);
+    }
+
+    function rdpSimplify(points, epsilon) {
+        if (points.length < 3) return points.slice();
+
+        let dmax = 0, index = 0;
+        const end = points.length - 1;
+        for (let i = 1; i < end; i++) {
+            const d = pointLineDist(points[i], points[0], points[end]);
+            if (d > dmax) { index = i; dmax = d; }
+        }
+
+        if (dmax > epsilon) {
+            const rec1 = rdpSimplify(points.slice(0, index + 1), epsilon);
+            const rec2 = rdpSimplify(points.slice(index), epsilon);
+            return rec1.slice(0, -1).concat(rec2);
+        } else {
+            return [points[0], points[end]];
+        }
+    }
+
+    function buildCardinalBezierPath(points, tension = 0.2) {
+        const n = points.length;
+        if (n === 0) return '';
+        if (n === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+        if (n === 2) {
+            const p0 = points[0], p1 = points[1];
+            return `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
+        }
+
+        const k = (1 - tension) / 6;
+        let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+
+        for (let i = 0; i < n - 1; i++) {
+            const p0 = i === 0 ? points[0] : points[i - 1];
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            const p3 = i + 2 < n ? points[i + 2] : points[n - 1];
+
+            const c1x = p1.x + (p2.x - p0.x) * k;
+            const c1y = p1.y + (p2.y - p0.y) * k;
+            const c2x = p2.x - (p3.x - p1.x) * k;
+            const c2y = p2.y - (p3.y - p1.y) * k;
+
+            d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+        }
+
+        return d;
+    }
+
+    function applyVeryLightSmoothing(points, strokeWidth) {
+        const movingAvgWindow = 3;
+        const epsilonFactor = 0.15;
+        const tension = 0.3;
+
+        if (!points || points.length < 3) {
+            if (!points || points.length === 0) return '';
+            if (points.length === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+            return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`;
+        }
+
+        let pts = points.slice();
+        pts = smoothMovingAverage(pts, movingAvgWindow);
+
+        const epsilon = Math.max(0.5, (strokeWidth || 3) * epsilonFactor);
+        pts = rdpSimplify(pts, epsilon);
+
+        return buildCardinalBezierPath(pts, tension);
+    }
+
 
     const getToolIcon = (tool) => {
         switch (tool) {
@@ -123,9 +246,7 @@ const initHandwriting = function (Reveal) {
             if (ctm) {
                 return point.matrixTransform(ctm.inverse());
             }
-        } catch (e) {
-
-        }
+        } catch (e) { }
         return { x, y };
     };
 
@@ -144,7 +265,6 @@ const initHandwriting = function (Reveal) {
             svg.style.touchAction = "none";
             svg.style.pointerEvents = "none";
 
-
             const slidesContainer = document.querySelector('.reveal .slides');
             if (slidesContainer) {
                 slidesContainer.appendChild(svg);
@@ -155,7 +275,6 @@ const initHandwriting = function (Reveal) {
 
         injectNotesUIStyles();
 
-
         const revealContainer = document.querySelector('.reveal');
         if (revealContainer) {
             revealContainer.addEventListener('pointermove', (e) => {
@@ -164,7 +283,7 @@ const initHandwriting = function (Reveal) {
                 if (e.pointerType === 'pen') {
                     setCursorNone();
                     penStyleLock = true;
-                    delayTimeout = setTimeout(() => { penStyleLock = false; }, 100);
+                    setTimeout(() => { penStyleLock = false; }, 100);
                 } else {
                     setCursorDefault();
                 }
@@ -210,7 +329,6 @@ const initHandwriting = function (Reveal) {
             svg.appendChild(group);
         }
 
-
         let markerStrokes = group.querySelector('.marker-strokes');
         if (!markerStrokes) {
             markerStrokes = document.createElementNS(SVG_NS, "g");
@@ -225,11 +343,9 @@ const initHandwriting = function (Reveal) {
             group.appendChild(penStrokes);
         }
 
-
         group.style.display = 'block';
         currentSlideGroup = group;
     }
-
 
     function beginPenSession(e) {
         penSession = true;
@@ -242,7 +358,6 @@ const initHandwriting = function (Reveal) {
         try { if (svg.hasPointerCapture?.(e.pointerId)) svg.releasePointerCapture(e.pointerId); } catch (err) { }
         svg.style.pointerEvents = "none";
     }
-
 
     async function fetchAsDataURL(url) {
         const response = await fetch(url);
@@ -259,8 +374,8 @@ const initHandwriting = function (Reveal) {
         const reveal = document.querySelector(".reveal");
         if (reveal) reveal.style.cursor = "none";
         if (svg) svg.style.cursor = "none";
-
     }
+
     function setCursorDefault() {
         const reveal = document.querySelector(".reveal");
         if (reveal) reveal.style.cursor = "default";
@@ -285,12 +400,6 @@ const initHandwriting = function (Reveal) {
             currentBtn.title = `Current tool: ${toolName[0].toUpperCase() + toolName.slice(1)}`;
         }
     }
-
-    function getDistance(p1, p2) {
-        return Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    }
-
-
 
     function isPointInPolygon(point, vs) {
         let x = point.x, y = point.y;
@@ -377,7 +486,6 @@ const initHandwriting = function (Reveal) {
         });
     }
 
-
     function absorbPenEvents(evt) {
         if (evt.pointerType === 'pen') {
             evt.preventDefault();
@@ -437,128 +545,6 @@ const initHandwriting = function (Reveal) {
             });
         });
     }
-
-
-    function smoothMovingAverage(points, win = 3) {
-        if (points.length <= 2 || win < 3 || win % 2 === 0) return points.slice();
-        const half = (win - 1) / 2;
-        const out = [];
-        for (let i = 0; i < points.length; i++) {
-            let sx = 0, sy = 0, cnt = 0;
-            for (let k = -half; k <= half; k++) {
-                const idx = Math.min(points.length - 1, Math.max(0, i + k));
-                sx += points[idx].x; sy += points[idx].y; cnt++;
-            }
-            out.push({ x: sx / cnt, y: sy / cnt });
-        }
-        return out;
-    }
-
-    /**
-     * Perpendicular distance from point P to line segment AB.
-     */
-    function pointLineDist(p, a, b) {
-        const vx = b.x - a.x, vy = b.y - a.y;
-        const wx = p.x - a.x, wy = p.y - a.y;
-        const c1 = vx * wx + vy * wy;
-        if (c1 <= 0) return Math.hypot(wx, wy);
-        const c2 = vx * vx + vy * vy;
-        if (c2 <= c1) return Math.hypot(p.x - b.x, p.y - b.y);
-        const t = c1 / c2;
-        const px = a.x + t * vx, py = a.y + t * vy;
-        return Math.hypot(p.x - px, p.y - py);
-    }
-
-    /**
-     * Ramer–Douglas–Peucker polyline simplification.
-     * epsilon controls how aggressively to simplify.
-     */
-    function rdpSimplify(points, epsilon) {
-        if (points.length < 3) return points.slice();
-
-        let dmax = 0, index = 0;
-        const end = points.length - 1;
-        for (let i = 1; i < end; i++) {
-            const d = pointLineDist(points[i], points[0], points[end]);
-            if (d > dmax) { index = i; dmax = d; }
-        }
-
-        if (dmax > epsilon) {
-            const rec1 = rdpSimplify(points.slice(0, index + 1), epsilon);
-            const rec2 = rdpSimplify(points.slice(index), epsilon);
-            return rec1.slice(0, -1).concat(rec2);
-        } else {
-            return [points[0], points[end]];
-        }
-    }
-
-    /**
-     * Build a smooth cubic Bezier path from points using a Cardinal (Catmull-Rom-like) spline.
-     * tension in [0,1]: 0 = Catmull-Rom (curviest), 1 = straight lines (no curvature).
-     * We use a common cubic conversion:
-     *   B0 = P1
-     *   B1 = P1 + (P2 - P0) * (1 - tension) / 6
-     *   B2 = P2 - (P3 - P1) * (1 - tension) / 6
-     *   B3 = P2
-     */
-    function buildCardinalBezierPath(points, tension = 0.2) {
-        const n = points.length;
-        if (n === 0) return '';
-        if (n === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-        if (n === 2) {
-            const p0 = points[0], p1 = points[1];
-            return `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
-        }
-
-        const k = (1 - tension) / 6;
-        let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-
-        for (let i = 0; i < n - 1; i++) {
-            const p0 = i === 0 ? points[0] : points[i - 1];
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            const p3 = i + 2 < n ? points[i + 2] : points[n - 1];
-
-            const c1x = p1.x + (p2.x - p0.x) * k;
-            const c1y = p1.y + (p2.y - p0.y) * k;
-            const c2x = p2.x - (p3.x - p1.x) * k;
-            const c2y = p2.y - (p3.y - p1.y) * k;
-
-            d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
-        }
-
-        return d;
-    }
-
-
-    function smoothStroke(points, strokeWidth, options = {}) {
-        const {
-            movingAvgWindow = 3,   // 3 or 5 works well
-            epsilonFactor = 0.35,  // RDP epsilon = factor * strokeWidth
-            tension = 0.2          // 0..1 (0 = curvy, 0.2–0.4 good handwriting)
-        } = options;
-
-        if (!points || points.length < 3) {
-            if (!points || points.length === 0) return '';
-            if (points.length === 1) {
-                const p = points[0];
-                return `M ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
-            }
-            return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`;
-        }
-
-        let pts = points.slice();
-
-        if (movingAvgWindow >= 3) {
-            pts = smoothMovingAverage(pts, movingAvgWindow);
-        }
-
-        const epsilon = Math.max(0.5, (strokeWidth || 3) * epsilonFactor);
-        pts = rdpSimplify(pts, epsilon);
-
-        return buildCardinalBezierPath(pts, tension);
-    }
-
 
     function setupPenEvents() {
         window.addEventListener('contextmenu', (e) => {
@@ -628,6 +614,8 @@ const initHandwriting = function (Reveal) {
 
                 currentPoints = [{ x: svgPoint.x, y: svgPoint.y }];
                 pendingPoints = [];
+                cachedPathData = `M ${svgPoint.x.toFixed(1)} ${svgPoint.y.toFixed(1)}`;
+                lastProcessedIndex = 0;
 
                 currentPathElement = document.createElementNS(SVG_NS, "path");
                 currentPathElement.style.pointerEvents = "all";
@@ -643,7 +631,7 @@ const initHandwriting = function (Reveal) {
                     currentPathElement.style.mixBlendMode = "multiply";
                 }
 
-                currentPathElement.setAttribute("d", `M ${svgPoint.x.toFixed(1)} ${svgPoint.y.toFixed(1)}`);
+                currentPathElement.setAttribute("d", cachedPathData);
 
                 const targetGroup = currentTool === 'marker' ?
                     currentSlideGroup.querySelector('.marker-strokes') :
@@ -765,25 +753,23 @@ const initHandwriting = function (Reveal) {
                     }
                 }
                 else if (currentPathElement) {
-                    const allPoints = currentPoints.concat(pendingPoints);
-                    pendingPoints = [];
+                    if (pendingPoints.length > 0) {
+                        for (let i = 0; i < pendingPoints.length; i++) currentPoints.push(pendingPoints[i]);
+                    }
 
-                    // Build a smooth cubic Bezier path based on the collected points
                     const activeWidth = strokeWidths[currentTool] || 3;
-                    const smoothedD = smoothStroke(allPoints, activeWidth, {
-                        movingAvgWindow: 3,    // try 5 if you want more denoise
-                        epsilonFactor: 0.35,   // 0.25..0.45; higher = simpler/smoother
-                        tension: 0.2           // 0..1; 0.2–0.4 keeps a “handwritten” feel
-                    });
+                    const finalSmoothedD = applyVeryLightSmoothing(currentPoints, activeWidth);
 
-                    if (smoothedD && smoothedD.length > 0) {
-                        currentPathElement.setAttribute('d', smoothedD);
+                    if (finalSmoothedD && finalSmoothedD.length > 0) {
+                        currentPathElement.setAttribute('d', finalSmoothedD);
                         currentPathElement.setAttribute('shape-rendering', 'geometricPrecision');
                     }
                 }
 
                 pendingPoints = [];
                 currentPoints = [];
+                cachedPathData = "";
+                lastProcessedIndex = 0;
                 currentPathElement = null;
             }
             isErasing = false;
@@ -886,7 +872,6 @@ const initHandwriting = function (Reveal) {
 
                 style.textContent = css;
             }
-
 
             const scriptElements = docClone.querySelectorAll('script[src]');
             for (const script of scriptElements) {
